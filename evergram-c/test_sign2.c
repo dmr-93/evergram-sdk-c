@@ -8,55 +8,50 @@ int main() {
         return 1;
     }
     
-    // Seed de teste (64 caracteres hex = 32 bytes)
-    const char* seed_hex = "6d028a3dfd4db99348621594955e12ddbe5f6e22f9838bb4ace0ed6993f5a275";
+    // Seed da carteira (do identity.json)
+    const char* seed_hex = "369366f86c040a6e6d7f94f0905e5a11051e7a316115c5efda8cd14fcfae6c82";
     unsigned char seed[32];
     
-    // Converter hex para bytes
     for (int i = 0; i < 32; i++) {
         sscanf(seed_hex + i*2, "%2x", &seed[i]);
     }
     
-    printf("Seed bytes: ");
-    for (int i = 0; i < 32; i++) {
-        printf("%02x", seed[i]);
-    }
-    printf("\n");
-    
-    // Gerar par de chaves a partir da seed
+    // Gerar par de chaves
     unsigned char pk[32], sk[64];
     if (crypto_sign_seed_keypair(pk, sk, seed) != 0) {
         fprintf(stderr, "Erro ao gerar par de chaves\n");
         return 1;
     }
     
-    printf("Public key: ");
-    for (int i = 0; i < 32; i++) {
-        printf("%02x", pk[i]);
-    }
-    printf("\n");
+    // Nonce do servidor (STRING HEX, não bytes brutos!)
+    const char* nonce_str = "f8354377ec549da8cba9bfaee5c428de";  // 32 caracteres hex
     
-    printf("Secret key (64 bytes): ");
-    for (int i = 0; i < 64; i++) {
-        printf("%02x", sk[i]);
-    }
-    printf("\n");
+    const char* address = "rB5uP8LszTYj29n6X5or1sWkbp8qNoy5Mr";
+    const char* device_id = "c207b3a54bb7b3405681b1b1b7910eb4";
     
-    // Assinar mensagem de teste usando a secret key COMPLETA (64 bytes)
-    const char* msg = "evergram-auth:test:nonce123";
-    unsigned char sig[64];
+    // Construir mensagem de desafio MESMO FORMATO que handshake.c
+    char challenge[512];
+    int len = snprintf(challenge, sizeof(challenge), "evergram-auth:%s:%s:%.*s", address, device_id, 32, nonce_str);
+    
+    printf("Challenge string: %s\n", challenge);
+    printf("Challenge length: %d\n", len);
+    
+    // Assinar
+    unsigned char signature[64];
     unsigned long long sig_len;
-    
-    // crypto_sign_detached usa sk de 64 bytes (seed + pk)
-    if (crypto_sign_detached(sig, &sig_len, (const unsigned char*)msg, strlen(msg), sk) != 0) {
+    if (crypto_sign_detached(signature, &sig_len, (const uint8_t*)challenge, strlen(challenge), sk) != 0) {
         fprintf(stderr, "Erro ao assinar\n");
         return 1;
     }
     
-    printf("Signature OK (%llu bytes)\n", sig_len);
+    printf("Signature (%llu bytes): ", sig_len);
+    for (int i = 0; i < 64; i++) {
+        printf("%02x", signature[i]);
+    }
+    printf("\n");
     
-    // Verificar assinatura usando public key
-    if (crypto_sign_verify_detached(sig, (const unsigned char*)msg, strlen(msg), pk) != 0) {
+    // Verificar assinatura
+    if (crypto_sign_verify_detached(signature, (const uint8_t*)challenge, strlen(challenge), pk) != 0) {
         fprintf(stderr, "Verificacao falhou!\n");
         return 1;
     }
