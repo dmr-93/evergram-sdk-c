@@ -77,6 +77,7 @@ typedef enum {
     EVERGRAM_STATE_CONNECTED,
     EVERGRAM_STATE_AUTHENTICATING,
     EVERGRAM_STATE_ERROR
+} evergram_state_t;
 
 typedef enum {
     EVERGRAM_HS_DISCONNECTED = 0,
@@ -88,7 +89,6 @@ typedef enum {
     EVERGRAM_HS_CONNECTED,
     EVERGRAM_HS_ERROR
 } evergram_hs_state_t;
-} evergram_state_t;
 
 // Carteira XRPL
 typedef struct {
