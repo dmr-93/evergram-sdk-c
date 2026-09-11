@@ -12,6 +12,9 @@
 extern "C" {
 #endif
 
+// Include do header gerado pelo protobuf-c
+#include "protobuf_generated.h"
+
 // ============================================================================
 // Constantes e Limites
 // ============================================================================
@@ -28,6 +31,11 @@ extern "C" {
 #define EVERGRAM_DEVICE_ID_LEN        16
 #define EVERGRAM_SIGNATURE_LEN        64
 #define EVERGRAM_MAC_BYTES            16
+
+// URL do servidor de staging
+#define EVERGRAM_DEFAULT_HOST         "staging.evergram.app"
+#define EVERGRAM_DEFAULT_PORT         443
+#define EVERGRAM_DEFAULT_PATH         "/"
 
 // ============================================================================
 // Códigos de Erro
@@ -61,12 +69,25 @@ typedef enum {
  * @brief Configurações de conexão para a Evergram.
  */
 typedef struct {
-    const char* host;        /**< Host do servidor (ex: "relay.evergram.io") */
+    const char* host;        /**< Host do servidor (ex: "staging.evergram.app") */
     int port;                /**< Porta (443 para WSS, 80 para WS) */
     int use_ssl;             /**< 1 para WSS (SSL), 0 para WS */
     const char* path;        /**< Path da URL (ex: "/") */
     int timeout_ms;          /**< Timeout de conexão em milissegundos */
 } evergram_config_t;
+
+/**
+ * @brief Configuração padrão para o servidor de staging.
+ */
+static inline evergram_config_t evergram_staging_config(void) {
+    evergram_config_t cfg;
+    cfg.host = EVERGRAM_DEFAULT_HOST;
+    cfg.port = EVERGRAM_DEFAULT_PORT;
+    cfg.use_ssl = 1;  // WSS
+    cfg.path = EVERGRAM_DEFAULT_PATH;
+    cfg.timeout_ms = 10000;
+    return cfg;
+}
 
 /**
  * @brief Estados possíveis da conexão.
