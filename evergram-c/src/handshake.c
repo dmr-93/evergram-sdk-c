@@ -63,7 +63,7 @@ static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
 
 /* Assinar desafio com wallet XRPL */
 static int sign_challenge(const uint8_t *secret_key_bytes, const char *address, 
-                          const char *device_id, const uint8_t *nonce, size_t nonce_len, 
+                          const char *device_id, const char *nonce_str, size_t nonce_len, 
                           uint8_t *signature_out) {
     /* Construir mensagem: "evergram-auth:{address}:{deviceId}:{nonce}" */
     char challenge[512];
@@ -72,16 +72,11 @@ static int sign_challenge(const uint8_t *secret_key_bytes, const char *address,
         return -1;
     }
     
-    /* Adicionar nonce em hex */
-    char nonce_hex[65];
-    if (nonce_len > 32) return -1;
-    
-    for (size_t i = 0; i < nonce_len; i++) {
-        sprintf(nonce_hex + i*2, "%02x", nonce[i]);
+    /* Adicionar nonce diretamente como string (já vem em hex do servidor) */
+    if (nonce_len >= sizeof(challenge) - strlen(challenge)) {
+        return -1;
     }
-    nonce_hex[nonce_len * 2] = '\0';
-    
-    strncat(challenge, nonce_hex, sizeof(challenge) - strlen(challenge) - 1);
+    strncat(challenge, nonce_str, nonce_len);
     
     /* Assinar com Ed25519 */
     unsigned long long sig_len;
@@ -124,10 +119,20 @@ int send_auth_response(evergram_t *eg) {
     
     /* Agora sk contém a secret key completa (64 bytes) necessária para crypto_sign_detached */
     
+    /* O nonce já está armazenado como string no buffer auth_challenge_nonce 
+     * Precisamos converter para string null-terminated para usar na assinatura */
+    char nonce_str[257];
+    if (egi->auth_challenge_nonce_len > 256) {
+        fprintf(stderr, "[Handshake] Nonce muito grande: %zu bytes\n", egi->auth_challenge_nonce_len);
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    memcpy(nonce_str, egi->auth_challenge_nonce, egi->auth_challenge_nonce_len);
+    nonce_str[egi->auth_challenge_nonce_len] = '\0';
+    
     /* Assinar o challenge */
     uint8_t signature[64];
     if (sign_challenge(sk, egi->wallet.address, egi->device.device_id,
-                       egi->auth_challenge_nonce, egi->auth_challenge_nonce_len, signature) != 0) {
+                       nonce_str, egi->auth_challenge_nonce_len, signature) != 0) {
         return EVERGRAM_ERR_CRYPTO;
     }
     
