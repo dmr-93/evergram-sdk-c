@@ -1,18 +1,29 @@
 ```
-# Compiled and build artifacts
+# Compiled and binary files
+*.a
+*.so
 *.o
 *.obj
 *.out
-bin/
+
 # Dependencies
-.venv/
-venv/
-node_modules/
+lib/
+
 # Logs and temp files
 *.log
 *.tmp
-*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
 # Editors
 .vscode/
 .idea/
+
+# Build artifacts
+build/
+dist/
+target/
 ```

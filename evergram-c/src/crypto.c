@@ -338,7 +338,7 @@ uint64_t evergram_get_timestamp_ms(void) {
  * @param out_len Tamanho do buffer de saída
  * @return EVERGRAM_SUCCESS se sucesso, erro caso contrário
  */
-evergram_error_t evergram_bytes_to_hex(const uint8_t* bytes, size_t len, char* out, size_t out_len) {
+int evergram_bytes_to_hex(const uint8_t* bytes, size_t len, char* out, size_t out_len) {
     if (!bytes || !out) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
