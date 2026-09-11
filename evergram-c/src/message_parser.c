@@ -11,8 +11,43 @@
 #include "evergram.pb-c.h"
 #include "transport.h"
 
+/* Definicao completa da estrutura interna (deve ser consistente com evergram.c) */
+struct evergram {
+    char *server_url;
+    evergram_wallet_t wallet;
+    evergram_device_t device;
+    void *ws_context;
+    evergram_state_t state;
+    evergram_hs_state_t hs_state;
+    unsigned char session_key[32];
+    bool session_keys_ready;
+    uint64_t send_nonce;
+    uint64_t recv_nonce;
+    uint8_t *recv_buffer;
+    size_t recv_buffer_size;
+    size_t recv_buffer_len;
+    time_t handshake_start_time;
+    
+    /* Campos para handshake e autenticacao */
+    uint8_t auth_challenge_nonce[256];
+    size_t auth_challenge_nonce_len;
+    bool auth_challenge_received;
+    bool device_registered;
+    
+    /* Callbacks */
+    evergram_message_callback on_message;
+    evergram_reaction_callback on_reaction;
+    evergram_typing_callback on_typing;
+    evergram_error_callback on_error;
+    evergram_connected_callback on_connected;
+    evergram_disconnected_callback on_disconnected;
+    evergram_chat_synced_callback on_chat_synced;
+    void *user_data;
+};
+
 /* Declaracao forward */
 extern int send_auth_response(evergram_t *eg);
+extern int send_register_device(evergram_t *eg);
 
 /**
  * Processa dados recebidos do transporte
@@ -71,6 +106,7 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
                 if (chal->nonce && strlen(chal->nonce) <= sizeof(eg->auth_challenge_nonce)) {
                     memcpy(eg->auth_challenge_nonce, chal->nonce, strlen(chal->nonce));
                     eg->auth_challenge_nonce_len = strlen(chal->nonce);
+                    eg->auth_challenge_received = true;
                     
                     /* Enviar resposta Auth */
                     send_auth_response(eg);
@@ -90,6 +126,13 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
                     if (eg->on_connected) {
                         eg->on_connected(eg);
                     }
+                } else if (auth_resp && auth_resp->error && 
+                           strstr(auth_resp->error->code, "device_not_registered")) {
+                    /* Device nao registrado - registrar e tentar novamente */
+                    printf("[Parser] Device nao registrado, registrando...\n");
+                    send_register_device(eg);
+                    /* Re-autenticar apos registro */
+                    send_auth_response(eg);
                 } else {
                     fprintf(stderr, "[Parser] Falha na autenticacao: %d\n", 
                             auth_resp ? auth_resp->status : -1);

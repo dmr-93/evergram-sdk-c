@@ -25,6 +25,14 @@ struct evergram {
     size_t recv_buffer_size;
     size_t recv_buffer_len;
     time_t handshake_start_time;
+    
+    /* Campos para handshake e autenticacao */
+    uint8_t auth_challenge_nonce[256];
+    size_t auth_challenge_nonce_len;
+    bool auth_challenge_received;
+    bool device_registered;
+    
+    /* Callbacks */
     evergram_message_callback on_message;
     evergram_reaction_callback on_reaction;
     evergram_typing_callback on_typing;
@@ -84,6 +92,9 @@ evergram_t* evergram_create(const evergram_options_t* options) {
     eg->session_keys_ready = false;
     eg->send_nonce = 0;
     eg->recv_nonce = 0;
+    eg->auth_challenge_received = false;
+    eg->auth_challenge_nonce_len = 0;
+    eg->device_registered = false;
     eg->user_data = options->user_data;
     
     /* Inicializar buffer de recebimento */
@@ -249,6 +260,8 @@ int evergram_start(evergram_t* eg) {
     const char* port_start = strchr(host, ':');
     const char* path_start = strchr(host, '/');
     
+    int ret = EVERGRAM_ERR_INVALID_PARAM;
+    
     if (port_start && (!path_start || port_start < path_start)) {
         /* Tem porta explícita */
         size_t host_len = port_start - host;
@@ -266,7 +279,7 @@ int evergram_start(evergram_t* eg) {
         }
         
         /* Conectar usando transporte */
-        return transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path);
+        ret = transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path);
     } else if (path_start) {
         /* Sem porta, tem path */
         char host_buf[256];
@@ -277,7 +290,7 @@ int evergram_start(evergram_t* eg) {
         strncpy(host_buf, host, host_len);
         host_buf[host_len] = '\0';
         
-        return transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path_start);
+        ret = transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path_start);
     } else {
         /* Sem porta, sem path */
         char host_buf[256];
@@ -288,8 +301,16 @@ int evergram_start(evergram_t* eg) {
         strncpy(host_buf, host, len);
         host_buf[len] = '\0';
         
-        return transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path);
+        ret = transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path);
     }
+    
+    if (ret == EVERGRAM_SUCCESS) {
+        /* Iniciar handshake após conexão estabelecida */
+        eg->hs_state = EVERGRAM_HS_CONNECTING;
+        printf("[Evergram] Conexão iniciada, aguardando AuthChallenge...\n");
+    }
+    
+    return ret;
 }
 
 /* evergram_poll - processa eventos por um período determinado */
@@ -298,7 +319,27 @@ int evergram_poll(evergram_t* eg, int timeout_ms) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    return transport_poll((ws_transport_t*)eg->ws_context, timeout_ms);
+    /* Processar eventos do WebSocket */
+    int ret = transport_poll((ws_transport_t*)eg->ws_context, timeout_ms);
+    if (ret != EVERGRAM_SUCCESS) {
+        return ret;
+    }
+    
+    /* Verificar se ha dados recebidos para processar */
+    size_t recv_len = 0;
+    const char* recv_data = transport_get_recv_buffer((ws_transport_t*)eg->ws_context, &recv_len);
+    
+    if (recv_data && recv_len > 0) {
+        /* Processar dados recebidos */
+        int processed = evergram_process_incoming_data(eg, (const uint8_t*)recv_data, recv_len);
+        
+        if (processed > 0) {
+            /* Resetar buffer após processamento */
+            transport_reset_recv_buffer((ws_transport_t*)eg->ws_context);
+        }
+    }
+    
+    return EVERGRAM_SUCCESS;
 }
 
 /* evergram_send - envia mensagem para um chat */
