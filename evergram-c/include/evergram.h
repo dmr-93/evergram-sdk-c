@@ -470,8 +470,15 @@ int evergram_send(evergram_t* eg, const char* chat_id, const char* text);
 int evergram_sendf(evergram_t* eg, const char* chat_id, const char* format, ...);
 
 /**
- * Envia indicador de digitação.
- * @param eg Instância do Evergram
+ * Sincroniza lista de chats com o gateway.
+ * Deve ser chamado apos a conexao para obter os chats existentes.
+ * @param eg Instancia do Evergram
+ */
+void evergram_sync_chats(evergram_t* eg);
+
+/**
+ * Envia indicador de digitacao.
+ * @param eg Instancia do Evergram
  * @param chat_id ID do chat
  * @return EVERGRAM_SUCCESS ou erro
  */
