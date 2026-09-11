@@ -1,0 +1,170 @@
+syntax = "proto3";
+
+package evergram;
+
+// Mensagens de Handshake e Conexão
+message HandshakeRequest {
+    string client_version = 1;
+    bytes device_public_key = 2;
+    uint64 timestamp = 3;
+}
+
+message HandshakeResponse {
+    bool success = 1;
+    bytes server_nonce = 2;
+    string error_message = 3;
+}
+
+message AuthRequest {
+    bytes signature = 1;
+    string wallet_address = 2;
+    bytes device_id = 3;
+}
+
+message AuthResponse {
+    bool authenticated = 1;
+    string session_token = 2;
+    uint64 expires_at = 3;
+}
+
+// Estruturas de Mensagem
+message Message {
+    string id = 1;
+    string chat_id = 2;
+    string sender_id = 3;
+    string content = 4;
+    uint64 timestamp = 5;
+    MessageType type = 6;
+    repeated Attachment attachments = 7;
+    MessageStatus status = 8;
+}
+
+enum MessageType {
+    MESSAGE_TYPE_UNKNOWN = 0;
+    MESSAGE_TYPE_TEXT = 1;
+    MESSAGE_TYPE_IMAGE = 2;
+    MESSAGE_TYPE_VIDEO = 3;
+    MESSAGE_TYPE_AUDIO = 4;
+    MESSAGE_TYPE_FILE = 5;
+    MESSAGE_TYPE_SYSTEM = 6;
+}
+
+enum MessageStatus {
+    STATUS_UNKNOWN = 0;
+    STATUS_SENT = 1;
+    STATUS_DELIVERED = 2;
+    STATUS_READ = 3;
+    STATUS_FAILED = 4;
+}
+
+message Attachment {
+    string id = 1;
+    string url = 2;
+    string mime_type = 3;
+    uint64 size = 4;
+    string filename = 5;
+}
+
+// Chat e Participantes
+message Chat {
+    string id = 1;
+    string name = 2;
+    ChatType type = 3;
+    repeated string participant_ids = 4;
+    uint64 created_at = 5;
+    Message last_message = 6;
+}
+
+enum ChatType {
+    CHAT_TYPE_PRIVATE = 0;
+    CHAT_TYPE_GROUP = 1;
+    CHAT_TYPE_CHANNEL = 2;
+}
+
+message CreateChatRequest {
+    string name = 1;
+    ChatType type = 2;
+    repeated string participant_ids = 3;
+}
+
+message AddParticipantRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+message RemoveParticipantRequest {
+    string chat_id = 1;
+    string user_id = 2;
+}
+
+// Perfil de Usuário
+message UserProfile {
+    string id = 1;
+    string display_name = 2;
+    string avatar_url = 3;
+    string bio = 4;
+    uint64 created_at = 5;
+}
+
+message SetProfileRequest {
+    string display_name = 1;
+    string avatar_url = 2;
+    string bio = 3;
+}
+
+// Reações
+message Reaction {
+    string message_id = 1;
+    string user_id = 2;
+    string emoji = 3;
+    uint64 timestamp = 4;
+}
+
+message SendReactionRequest {
+    string message_id = 1;
+    string emoji = 2;
+}
+
+// Typing Indicator
+message TypingIndicator {
+    string chat_id = 1;
+    string user_id = 2;
+    bool is_typing = 3;
+    uint64 timestamp = 4;
+}
+
+// Envelope criptografado para transporte
+message EncryptedEnvelope {
+    bytes encrypted_payload = 1;
+    bytes nonce = 2;
+    string sender_device_id = 3;
+    uint64 timestamp = 4;
+}
+
+// Wrapper de protocolo
+message ProtocolMessage {
+    oneof payload {
+        HandshakeRequest handshake_request = 1;
+        HandshakeResponse handshake_response = 2;
+        AuthRequest auth_request = 3;
+        AuthResponse auth_response = 4;
+        Message message = 5;
+        Chat chat = 6;
+        CreateChatRequest create_chat_request = 7;
+        AddParticipantRequest add_participant_request = 8;
+        RemoveParticipantRequest remove_participant_request = 9;
+        UserProfile user_profile = 10;
+        SetProfileRequest set_profile_request = 11;
+        Reaction reaction = 12;
+        SendReactionRequest send_reaction_request = 13;
+        TypingIndicator typing_indicator = 14;
+        EncryptedEnvelope encrypted_envelope = 15;
+        ErrorResponse error_response = 16;
+    }
+}
+
+message ErrorResponse {
+    string code = 1;
+    string message = 2;
+    string details = 3;
+}

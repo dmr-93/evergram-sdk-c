@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <sodium.h>
 #include <libwebsockets.h>
 #include "transport.h"
 
@@ -171,31 +172,36 @@ int evergram_generate_device(evergram_device_t* device) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    // NOTA: Implementação real requer libsodium para gerar par de chaves X25519
-    fprintf(stderr, "AVISO: evergram_generate_device() é um stub.\n");
-    fprintf(stderr, "Implementação real requer crypto_box_keypair() do libsodium.\n");
+    /* Inicializa libsodium se necessário */
+    if (sodium_init() < 0) {
+        fprintf(stderr, "[Evergram] Falha ao inicializar libsodium\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
     
-    memset(device, 0, sizeof(*device));
-    strcpy(device->pub_hex, "stub_device_pub_hex");
-    strcpy(device->priv_hex, "stub_device_priv_hex");
-    strcpy(device->device_id, "stub_device_id");
+    /* Gera par de chaves usando crypto_box_keypair do libsodium */
+    unsigned char pub_bin[crypto_box_PUBLICKEYBYTES];
+    unsigned char priv_bin[crypto_box_SECRETKEYBYTES];
+    
+    if (crypto_box_keypair(pub_bin, priv_bin) != 0) {
+        fprintf(stderr, "[Evergram] Falha ao gerar par de chaves do dispositivo\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    
+    /* Converte chaves binárias para hex */
+    sodium_bin2hex(device->pub_hex, EVERGRAM_MAX_HEX_KEY_LEN, pub_bin, sizeof(pub_bin));
+    sodium_bin2hex(device->priv_hex, EVERGRAM_MAX_HEX_KEY_LEN, priv_bin, sizeof(priv_bin));
+    
+    /* Deriva device_id a partir da chave pública */
+    if (evergram_derive_device_id(device->pub_hex, device->device_id) != EVERGRAM_SUCCESS) {
+        fprintf(stderr, "[Evergram] Falha ao derivar device_id\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
     
     return EVERGRAM_SUCCESS;
 }
 
-int evergram_derive_device_id(const char* device_pub_hex, char* device_id_out) {
-    if (!device_pub_hex || !device_id_out) {
-        return EVERGRAM_ERR_INVALID_PARAM;
-    }
-    
-    // NOTA: Implementação real requer SHA-256 e truncamento para 32 chars hex
-    // (sha256(devicePubHex).slice(0, 32))
-    fprintf(stderr, "AVISO: evergram_derive_device_id() é um stub.\n");
-    
-    strcpy(device_id_out, "stub_derived_device_id");
-    
-    return EVERGRAM_SUCCESS;
-}
+/* evergram_derive_device_id foi movido para crypto.c com implementação real */
+
 
 // ============================================================================
 // Criação e Destruição da Instância
