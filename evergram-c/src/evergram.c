@@ -331,12 +331,16 @@ int evergram_poll(evergram_t* eg, int timeout_ms) {
     const char* recv_data = transport_get_recv_buffer((ws_transport_t*)eg->ws_context, &recv_len);
     
     if (recv_data && recv_len > 0) {
+        printf("[Evergram] Processando %zu bytes recebidos...\n", recv_len);
+        
         /* Processar dados recebidos */
         int processed = evergram_process_incoming_data(eg, (const uint8_t*)recv_data, recv_len);
         
         if (processed > 0) {
             /* Resetar buffer após processamento */
             transport_reset_recv_buffer((ws_transport_t*)eg->ws_context);
+        } else if (processed < 0) {
+            fprintf(stderr, "[Evergram] Erro ao processar dados recebidos\n");
         }
     }
     

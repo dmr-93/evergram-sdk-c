@@ -74,8 +74,19 @@ void on_error(evergram_t* eg, evergram_error_t error, const char* message) {
 
 // Callback para conexão estabelecida
 void on_connected(evergram_t* eg) {
-    (void)eg;  // Não usado no stub
     printf("[CONECTADO] Bot online e pronto para receber mensagens!\n");
+    
+    // Enviar mensagem de teste para a carteira específica
+    const char* target_wallet = "rNPvaf8QNuUFh9xoRTj48BdoodWSywywdw";
+    const char* test_message = "teste";
+    
+    printf("Enviando mensagem de teste para %s...\n", target_wallet);
+    int ret = evergram_send(eg, target_wallet, test_message);
+    if (ret != EVERGRAM_SUCCESS) {
+        fprintf(stderr, "Erro ao enviar mensagem de teste: %s\n", evergram_strerror(ret));
+    } else {
+        printf("Mensagem de teste enviada com sucesso!\n");
+    }
 }
 
 // Callback para desconexão
