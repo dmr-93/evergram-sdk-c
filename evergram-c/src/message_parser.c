@@ -107,18 +107,15 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
         if (chal->nonce) {
             size_t nonce_len = strlen(chal->nonce);
             printf("[Parser] Nonce length: %zu bytes\n", nonce_len);
-            printf("[Parser] Nonce hex: ");
-            for (size_t i = 0; i < nonce_len && i < 32; i++) {
-                printf("%02x ", (unsigned char)chal->nonce[i]);
-            }
-            printf("\n");
+            printf("[Parser] Nonce string: %s\n", chal->nonce);
             
-            if (nonce_len < sizeof(eg->auth_challenge_nonce)) {
+            if (nonce_len <= sizeof(eg->auth_challenge_nonce)) {
+                /* Armazenar nonce como string hex (já vem em hex do servidor) */
                 memcpy(eg->auth_challenge_nonce, chal->nonce, nonce_len);
-                eg->auth_challenge_nonce[nonce_len] = '\0';  // Garantir null-termination
+                eg->auth_challenge_nonce[nonce_len] = '\0';  // Null-terminate
                 eg->auth_challenge_nonce_len = nonce_len;
                 eg->auth_challenge_received = true;
-                printf("[Parser] Nonce armazenado como string: %s\n", (char*)eg->auth_challenge_nonce);
+                printf("[Parser] Nonce armazenado como string hex (%zu bytes)\n", nonce_len);
                 
                 printf("[Handshake] Wallet address: %s\n", eg->wallet.address);
                 printf("[Handshake] Device ID: %s\n", eg->device.device_id);

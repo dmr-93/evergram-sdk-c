@@ -6,39 +6,11 @@
 *.so
 *.exe
 *.dll
-*.pyc
-__pycache__/
-
+*.out
+debug_handshake
+test_sign
+test_sign2
 # Build directories
 obj/
 lib/
-build/
-dist/
-target/
-
-# Dependencies
-node_modules/
-.venv/
-venv/
-.mypy_cache/
-.pytest_cache/
-.gradle/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Editors
-.vscode/
-.idea/
-
-# System files
-.DS_Store
-Thumbs.db
-
-# Environment
-.env
-.env.local
-*.env.*
 ```
