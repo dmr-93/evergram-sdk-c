@@ -329,3 +329,55 @@ uint64_t evergram_get_timestamp_ms(void) {
     clock_gettime(CLOCK_REALTIME, &ts);
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
+
+/**
+ * @brief Converte bytes para string hexadecimal
+ * @param bytes Buffer de entrada
+ * @param len Número de bytes
+ * @param out Buffer de saída (deve ter espaço para 2*len + 1)
+ * @param out_len Tamanho do buffer de saída
+ * @return EVERGRAM_SUCCESS se sucesso, erro caso contrário
+ */
+evergram_error_t evergram_bytes_to_hex(const uint8_t* bytes, size_t len, char* out, size_t out_len) {
+    if (!bytes || !out) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    /* Verifica se buffer de saída é grande o suficiente */
+    if (out_len < len * 2 + 1) {
+        return EVERGRAM_ERR_BUFFER_TOO_SMALL;
+    }
+    
+    sodium_bin2hex(out, out_len, bytes, len);
+    return EVERGRAM_SUCCESS;
+}
+
+/**
+ * @brief Converte string hexadecimal para bytes
+ * @param hex String hex de entrada
+ * @param out Buffer de saída
+ * @param out_len Tamanho do buffer de saída
+ * @return Número de bytes escritos ou erro negativo
+ */
+int evergram_hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
+    if (!hex || !out) {
+        return (int)EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    size_t hex_len = strlen(hex);
+    if (hex_len % 2 != 0) {
+        return (int)EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    size_t bytes_len = hex_len / 2;
+    if (bytes_len > out_len) {
+        return (int)EVERGRAM_ERR_BUFFER_TOO_SMALL;
+    }
+    
+    size_t bin_len;
+    if (sodium_hex2bin(out, out_len, hex, hex_len, NULL, &bin_len, NULL) != 0) {
+        return (int)EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    return (int)bytes_len;
+}

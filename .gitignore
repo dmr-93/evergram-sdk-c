@@ -2,61 +2,17 @@
 # Compiled and build artifacts
 *.o
 *.obj
-*.a
-*.so
-*.dll
-*.exe
-build/
-dist/
-
+*.out
+bin/
 # Dependencies
-venv/
 .venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
+venv/
+node_modules/
 # Logs and temp files
 *.log
 *.tmp
 *.swp
-
 # Editors
 .vscode/
 .idea/
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Compression
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
 ```
