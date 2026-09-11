@@ -352,14 +352,89 @@ int evergram_send(evergram_t* eg, const char* chat_id, const char* text) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
-    /* TODO: Implementar envio real de mensagem criptografada via protocolo Evergram */
-    /* Por enquanto, apenas logamos a mensagem que seria enviada */
-    fprintf(stderr, "[Evergram] Enviando mensagem para %s: %s\\n", chat_id, text);
+    /* TODO: Implementar criptografia E2EE completa */
+    /* Por enquanto, envia texto simples como ciphertext */
+    /* Na implementacao real, deve-se: 
+     * 1. Obter symKey do chat
+     * 2. Criptografar texto com encryptMessage()
+     * 3. Usar ciphertext e nonce reais
+     */
     
-    /* Placeholder: enviar mensagem de texto simples */
-    /* Na implementação real, aqui seria montado o protobuf, criptografado, etc. */
-    const char* msg = text;
-    size_t len = strlen(msg);
+    /* Gerar msgId unico */
+    char msg_id[65];
+    uint8_t random_bytes[32];
+    randombytes_buf(random_bytes, sizeof(random_bytes));
+    evergram_bytes_to_hex(random_bytes, sizeof(random_bytes), msg_id, sizeof(msg_id));
     
-    return transport_send((ws_transport_t*)eg->ws_context, (const uint8_t*)msg, len);
+    /* Construir SendContent */
+    Evergram__SendContent send_content = EVERGRAM__SEND_CONTENT__INIT;
+    send_content.msg_id = msg_id;
+    send_content.ciphertext = (char*)text;  /* TODO: usar ciphertext real */
+    send_content.nonce = "";  /* TODO: usar nonce real */
+    send_content.reply_to_msg_id = "";
+    
+    /* Construir Envelope */
+    Evergram__Envelope envelope = EVERGRAM__ENVELOPE__INIT;
+    envelope.type = "SEND";
+    envelope.chat_id = (char*)chat_id;
+    envelope.sender = eg->wallet.address;
+    envelope.send = &send_content;
+    envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_SEND;
+    
+    /* Construir ClientMessage */
+    Evergram__ClientMessage msg = EVERGRAM__CLIENT_MESSAGE__INIT;
+    msg.envelope = &envelope;
+    msg.payload_case = EVERGRAM__CLIENT_MESSAGE__PAYLOAD_ENVELOPE;
+    
+    /* Serializar protobuf */
+    size_t packed_size = evergram__client_message__get_packed_size(&msg);
+    uint8_t *packed = malloc(packed_size);
+    if (!packed) {
+        return EVERGRAM_ERR_MEMORY;
+    }
+    
+    evergram__client_message__pack(&msg, packed);
+    
+    /* Enviar via transporte */
+    int ret = transport_send((ws_transport_t*)eg->ws_context, packed, packed_size);
+    free(packed);
+    
+    if (ret == EVERGRAM_SUCCESS) {
+        printf("[Evergram] Mensagem enviada para %s: %s (msg_id: %s)\n", chat_id, text, msg_id);
+    }
+    
+    return ret;
+}
+
+/* evergram_sync_chats - sincroniza lista de chats com o gateway */
+void evergram_sync_chats(evergram_t* eg) {
+    if (!eg || !evergram_is_connected(eg)) {
+        return;
+    }
+    
+    /* Criar QueryChats vazio - gateway retorna todos os chats conhecidos */
+    Evergram__QueryChats query = EVERGRAM__QUERY_CHATS__INIT;
+    query.cursor = "";
+    
+    /* Criar ClientMessage */
+    Evergram__ClientMessage msg = EVERGRAM__CLIENT_MESSAGE__INIT;
+    msg.query_chats = &query;
+    
+    /* Serializar protobuf */
+    size_t packed_size = evergram__client_message__get_packed_size(&msg);
+    uint8_t *packed = malloc(packed_size);
+    if (!packed) {
+        fprintf(stderr, "[Evergram] Erro de memoria ao sincronizar chats\n");
+        return;
+    }
+    
+    evergram__client_message__pack(&msg, packed);
+    
+    /* Enviar via transporte */
+    int ret = transport_send((ws_transport_t*)eg->ws_context, packed, packed_size);
+    free(packed);
+    
+    if (ret == EVERGRAM_SUCCESS) {
+        printf("[Evergram] Solicitando sincronizacao de chats...\n");
+    }
 }
