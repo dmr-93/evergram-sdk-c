@@ -345,6 +345,15 @@ int evergram_start(evergram_t* eg);
 int evergram_poll(evergram_t* eg, int timeout_ms);
 
 /**
+ * Processa dados recebidos do transporte (uso interno).
+ * @param eg Instância do Evergram
+ * @param data Dados brutos recebidos
+ * @param len Tamanho dos dados
+ * @return Número de mensagens processadas ou erro negativo
+ */
+int evergram_process_incoming_data(evergram_t* eg, const uint8_t* data, size_t len);
+
+/**
  * Processa dados de handshake recebidos (uso interno).
  * @param eg Instância do Evergram
  * @param data Dados brutos recebidos

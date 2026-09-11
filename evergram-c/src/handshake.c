@@ -181,7 +181,7 @@ int send_auth_response(evergram_t *eg) {
 }
 
 /* Enviar mensagem de registro de dispositivo */
-static int send_register_device(evergram_t *eg) {
+int send_register_device(evergram_t *eg) {
     if (!eg) return EVERGRAM_ERR_INVALID_PARAM;
     
     /* Cast para estrutura interna completa */

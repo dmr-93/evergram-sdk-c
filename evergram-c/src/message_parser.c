@@ -117,7 +117,7 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
                 printf("[Parser] AuthResponse recebido\n");
                 
                 Evergram__AuthResponse *auth_resp = server_msg->auth_response;
-                if (auth_resp && auth_resp->status == EVERGRAM__RESPONSE_STATUS__SUCCESS) {
+                if (auth_resp && auth_resp->status && auth_resp->status->ok) {
                     eg->state = EVERGRAM_STATE_CONNECTED;
                     eg->hs_state = EVERGRAM_HS_AUTHENTICATED;
                     printf("[Parser] Autenticado com sucesso!\n");
@@ -126,16 +126,17 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
                     if (eg->on_connected) {
                         eg->on_connected(eg);
                     }
-                } else if (auth_resp && auth_resp->error && 
-                           strstr(auth_resp->error->code, "device_not_registered")) {
+                } else if (auth_resp && auth_resp->status && auth_resp->status->code && 
+                           strstr(auth_resp->status->code, "device_not_registered")) {
                     /* Device nao registrado - registrar e tentar novamente */
                     printf("[Parser] Device nao registrado, registrando...\n");
                     send_register_device(eg);
                     /* Re-autenticar apos registro */
                     send_auth_response(eg);
                 } else {
-                    fprintf(stderr, "[Parser] Falha na autenticacao: %d\n", 
-                            auth_resp ? auth_resp->status : -1);
+                    fprintf(stderr, "[Parser] Falha na autenticacao: %s\n", 
+                            auth_resp && auth_resp->status && auth_resp->status->message 
+                            ? auth_resp->status->message : "unknown error");
                     if (eg->on_error) {
                         eg->on_error(eg, EVERGRAM_ERR_AUTH, "Authentication failed");
                     }
