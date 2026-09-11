@@ -4,6 +4,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <libwebsockets.h>
+#include "transport.h"
+
+// Forward declaration do transporte
+typedef struct ws_transport ws_transport_t;
 
 // ============================================================================
 // Estruturas Internas
@@ -14,8 +19,7 @@ struct evergram {
     evergram_options_t options;
     
     // Estado da conexão
-    int connected;
-    int authenticating;
+    evergram_state_t state;
     char nonce[EVERGRAM_MAX_NONCE_LEN];  // Nonce atual para auth
     
     // Callbacks
@@ -27,8 +31,8 @@ struct evergram {
     evergram_disconnected_callback on_disconnected;
     evergram_chat_synced_callback on_chat_synced;
     
-    // Transporte (implementação específica)
-    void* transport;
+    // Transporte WebSocket
+    ws_transport_t* transport;
     
     // Chats conhecidos (para cache de chaves simétricas)
     struct chat_cache* chats;
@@ -195,125 +199,169 @@ int evergram_derive_device_id(const char* device_pub_hex, char* device_id_out) {
 
 // ============================================================================
 // Criação e Destruição da Instância
+
+// ============================================================================
+// Gerenciamento da Instância (Implementação Real com WebSocket)
 // ============================================================================
 
 evergram_t* evergram_create(const evergram_options_t* options) {
     if (!options || !options->url || !options->wallet || !options->device) {
         return NULL;
     }
-    
+
     evergram_t* eg = (evergram_t*)calloc(1, sizeof(evergram_t));
     if (!eg) {
         return NULL;
     }
-    
+
     // Copiar opções
     eg->options.url = strdup(options->url);
     eg->options.wallet = options->wallet;
     eg->options.device = options->device;
     eg->options.name = options->name ? strdup(options->name) : NULL;
     eg->options.platform = options->platform ? strdup(options->platform) : NULL;
-    eg->options.max_participants = options->max_participants > 0 ? 
+    eg->options.max_participants = options->max_participants > 0 ?
                                     options->max_participants : 250;
-    eg->options.request_timeout_ms = options->request_timeout_ms > 0 ? 
+    eg->options.request_timeout_ms = options->request_timeout_ms > 0 ?
                                       options->request_timeout_ms : 30000;
     eg->options.auto_reconnect = options->auto_reconnect;
     eg->options.user_data = options->user_data;
-    
+
     // Inicializar estado
-    eg->connected = 0;
-    eg->authenticating = 0;
-    eg->transport = NULL;
+    eg->state = EVERGRAM_STATE_DISCONNECTED;
+    memset(eg->nonce, 0, sizeof(eg->nonce));
     eg->chats = NULL;
     eg->chat_count = 0;
     eg->user_data = options->user_data;
-    
-    // NOTA: Aqui inicializaria o transporte WebSocket
-    // eg->transport = transport_create(options->url);
-    // if (!eg->transport) {
-    //     evergram_destroy(eg);
-    //     return NULL;
-    // }
-    
+
+    // Inicializar transporte WebSocket
+    eg->transport = transport_init(eg, options->url);
+    if (!eg->transport) {
+        fprintf(stderr, "[Evergram] Falha ao inicializar transporte WebSocket\n");
+        evergram_destroy(eg);
+        return NULL;
+    }
+
+    fprintf(stderr, "[Evergram] Instância criada com sucesso\n");
     return eg;
 }
 
 void evergram_destroy(evergram_t* eg) {
     if (!eg) return;
-    
+
     // Liberar strings alocadas
     free((char*)eg->options.url);
     free((char*)eg->options.name);
     free((char*)eg->options.platform);
-    
-    // Limpar transporte
-    // if (eg->transport) {
-    //     transport_destroy(eg->transport);
-    // }
-    
+
+    // Destruir transporte WebSocket
+    if (eg->transport) {
+        transport_destroy(eg->transport);
+        eg->transport = NULL;
+    }
+
     // Limpar cache de chats
     // ... (implementação dependente da estrutura chat_cache)
-    
+
     free(eg);
+    fprintf(stderr, "[Evergram] Instância destruída\n");
 }
 
 // ============================================================================
-// Controle de Conexão (Stubs)
+// Controle de Conexão
 // ============================================================================
 
 int evergram_start(evergram_t* eg) {
-    if (!eg) {
+    if (!eg || !eg->transport) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+
+    if (eg->state != EVERGRAM_STATE_DISCONNECTED) {
+        return EVERGRAM_SUCCESS; // Já está iniciando/conectado
+    }
+
+    // Parse da URL para obter host, port, path
+    // Formato: wss://host:port/path ou ws://host:port/path
+    const char* url = eg->options.url;
+    int use_ssl = 0;
+    int port = 443;
+    char host[256] = {0};
+    char path[256] = "/";
+    
+    if (strncmp(url, "wss://", 6) == 0) {
+        use_ssl = 1;
+        url += 6;
+        port = 443;
+    } else if (strncmp(url, "ws://", 5) == 0) {
+        use_ssl = 0;
+        url += 5;
+        port = 80;
+    } else {
+        fprintf(stderr, "[Evergram] URL inválida (deve começar com ws:// ou wss://)\n");
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->options.url) {
-        return EVERGRAM_ERR_INVALID_PARAM;
+    // Extrair host e path
+    char* slash = strchr(url, '/');
+    if (slash) {
+        size_t host_len = slash - url;
+        if (host_len >= sizeof(host)) host_len = sizeof(host) - 1;
+        strncpy(host, url, host_len);
+        host[host_len] = '\0';
+        strncpy(path, slash, sizeof(path) - 1);
+        path[sizeof(path) - 1] = '\0';
+    } else {
+        strncpy(host, url, sizeof(host) - 1);
+        host[sizeof(host) - 1] = '\0';
     }
     
-    fprintf(stderr, "AVISO: evergram_start() é um stub.\n");
-    fprintf(stderr, "Implementação real requer:\n");
-    fprintf(stderr, "  1. Conectar WebSocket para %s\n", eg->options.url);
-    fprintf(stderr, "  2. Aguardar auth_challenge do gateway\n");
-    fprintf(stderr, "  3. Assinar desafio com wallet\n");
-    fprintf(stderr, "  4. Enviar mensagem Auth com prova\n");
-    fprintf(stderr, "  5. Lidar com device_not_registered se necessário\n");
-    fprintf(stderr, "  6. Sincronizar chats existentes\n");
+    // Extrair porta se presente
+    char* colon = strchr(host, ':');
+    if (colon) {
+        *colon = '\0';
+        port = atoi(colon + 1);
+    }
     
-    // Simular sucesso para compilação
-    eg->connected = 1;
+    fprintf(stderr, "[Evergram] Conectando a %s:%d%s (SSL=%d)\n", host, port, path, use_ssl);
     
+    eg->state = EVERGRAM_STATE_CONNECTING;
+    
+    int ret = transport_connect(eg->transport, host, port, use_ssl, path);
+    if (ret != EVERGRAM_SUCCESS) {
+        eg->state = EVERGRAM_STATE_ERROR;
+        return ret;
+    }
+    
+    // Aguardar conexão estabelecer (evento loop fará isso no poll)
     return EVERGRAM_SUCCESS;
 }
 
 int evergram_poll(evergram_t* eg, int timeout_ms) {
-    (void)timeout_ms;  // Stub não usa timeout
-    
-    if (!eg) {
+    if (!eg || !eg->transport) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
+
+    // Processar eventos do WebSocket
+    int ret = transport_poll(eg->transport, timeout_ms);
     
-    if (!eg->connected) {
-        return EVERGRAM_ERR_NOT_CONNECTED;
+    // Verificar reconexão automática se necessário
+    if (ret != EVERGRAM_SUCCESS && eg->options.auto_reconnect && 
+        eg->state == EVERGRAM_STATE_CONNECTED) {
+        fprintf(stderr, "[Evergram] Conexão perdida, tentando reconectar...\n");
+        eg->state = EVERGRAM_STATE_DISCONNECTED;
+        // Tentar reconectar no próximo start
     }
     
-    // NOTA: Implementação real faria:
-    // 1. Poll do WebSocket (lws_service ou similar)
-    // 2. Processar mensagens recebidas
-    // 3. Descriptografar mensagens E2EE
-    // 4. Disparar callbacks apropriados
-    // 5. Lidar com reconnect se necessário
-    
-    // Stub: apenas espera
-    // Em produção: usar select/poll/epoll com timeout
-    
-    return EVERGRAM_SUCCESS;
+    return ret;
 }
 
 bool evergram_is_connected(evergram_t* eg) {
-    return eg && eg->connected;
+    if (!eg || !eg->transport) {
+        return false;
+    }
+    return transport_is_connected(eg->transport);
 }
 
-// ============================================================================
 // Registro de Callbacks
 // ============================================================================
 
@@ -361,7 +409,7 @@ int evergram_send(evergram_t* eg, const char* chat_id, const char* text) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -420,7 +468,7 @@ int evergram_send_typing(evergram_t* eg, const char* chat_id) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -435,7 +483,7 @@ int evergram_send_reaction(evergram_t* eg, const char* chat_id,
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -449,7 +497,7 @@ int evergram_remove_reaction(evergram_t* eg, const char* chat_id, const char* ms
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -464,7 +512,7 @@ int evergram_edit_message(evergram_t* eg, const char* chat_id,
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -478,7 +526,7 @@ int evergram_delete_message(evergram_t* eg, const char* chat_id, const char* msg
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -496,7 +544,7 @@ int evergram_create_chat(evergram_t* eg, const char* identity_key, char* chat_id
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -516,7 +564,7 @@ int evergram_create_group(evergram_t* eg, const char* name,
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -535,7 +583,7 @@ int evergram_add_participant(evergram_t* eg, const char* chat_id,
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -550,7 +598,7 @@ int evergram_remove_participant(evergram_t* eg, const char* chat_id,
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -564,7 +612,7 @@ int evergram_leave_chat(evergram_t* eg, const char* chat_id) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -578,7 +626,7 @@ int evergram_rotate_chat_version(evergram_t* eg, const char* chat_id) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -597,7 +645,7 @@ int evergram_get_profile(evergram_t* eg, const char* identity_key,
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -619,7 +667,7 @@ int evergram_set_profile(evergram_t* eg, const char* name, const char* bio) {
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     
@@ -633,7 +681,7 @@ int evergram_list_chats(evergram_t* eg, evergram_chat_info_t** chats_out, int ma
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (!eg->connected) {
+    if (!transport_is_connected(eg->transport)) {
         return EVERGRAM_ERR_NOT_CONNECTED;
     }
     

@@ -5,11 +5,22 @@ AR = ar
 CFLAGS = -Wall -Wextra -Werror -std=gnu11 -fPIC -I./include
 LDFLAGS = -shared
 
-# Bibliotecas externas (descomente as que tiver instaladas)
-# LIBS = -lsodium -lwebsockets -lprotobuf-c -lcurl -lxrpl
+# Bibliotecas externas
+# Para produção, descomente todas as dependências:
+# LIBS = -lsodium -lwebsockets -lprotobuf-c -lcurl
 
-# Em modo stub, sem dependências externas
-LIBS = 
+# Modo stub (sem libsodium e protobuf-c, apenas libwebsockets para transporte)
+LIBS = -lwebsockets
+
+# Debug flags
+ifdef DEBUG
+CFLAGS += -g -O0 -DDEBUG
+endif
+
+# Release flags
+ifdef RELEASE
+CFLAGS += -O3 -DNDEBUG
+endif 
 
 # Diretórios
 SRC_DIR = src

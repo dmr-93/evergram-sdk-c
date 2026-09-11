@@ -52,6 +52,28 @@ typedef enum {
 // Tipos de Dados
 // ============================================================================
 
+/**
+ * @brief Configurações de conexão para a Evergram.
+ */
+typedef struct {
+    const char* host;        /**< Host do servidor (ex: "relay.evergram.io") */
+    int port;                /**< Porta (443 para WSS, 80 para WS) */
+    int use_ssl;             /**< 1 para WSS (SSL), 0 para WS */
+    const char* path;        /**< Path da URL (ex: "/") */
+    int timeout_ms;          /**< Timeout de conexão em milissegundos */
+} evergram_config_t;
+
+/**
+ * @brief Estados possíveis da conexão.
+ */
+typedef enum {
+    EVERGRAM_STATE_DISCONNECTED = 0,
+    EVERGRAM_STATE_CONNECTING,
+    EVERGRAM_STATE_CONNECTED,
+    EVERGRAM_STATE_AUTHENTICATING,
+    EVERGRAM_STATE_ERROR
+} evergram_state_t;
+
 // Carteira XRPL
 typedef struct {
     char seed[EVERGRAM_MAX_HEX_KEY_LEN];
