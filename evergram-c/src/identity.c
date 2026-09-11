@@ -39,13 +39,11 @@ int evergram_generate_wallet(evergram_wallet_t* wallet) {
     bytes_to_hex(pk, sizeof(pk), wallet->public_key_hex, sizeof(wallet->public_key_hex));
     bytes_to_hex(sk, sizeof(sk), wallet->private_key_hex, sizeof(wallet->private_key_hex));
     
-    // Gerar endereço clássico da Ripple (simplificado - baseado no public key)
-    // Em produção, precisaria do algoritmo real de encoding da Ripple com checksum
+    // Gerar endereço clássico da Ripple completo (sem truncar)
     snprintf(wallet->address, sizeof(wallet->address), "r");
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 16; i++) {
         snprintf(wallet->address + 1 + (i * 2), 3, "%02X", pk[i]);
     }
-    strcat(wallet->address, "...");
     
     return EVERGRAM_SUCCESS;
 }
