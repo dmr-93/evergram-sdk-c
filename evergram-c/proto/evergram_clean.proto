@@ -13,7 +13,7 @@ enum ChainFamily {
 message ChainIdentity {
   ChainFamily     chain_family = 1;
   string          address      = 2; // rAddress, 0x..., etc
-  optional string network_id   = 3;
+  string network_id   = 3;
 }
 
 // AuthProof is only valid during bootstrap or sensitive operations.
@@ -70,7 +70,7 @@ message ClientMessage {
   // must count from 1) — older clients that predate this field send 0,
   // which the gateway never echoes, so those connections fall back to the
   // pre-existing per-field response matchers.
-  optional uint32 request_id = 1;
+  uint32 request_id = 1;
 
   oneof payload {
     Auth                 auth            = 2;
@@ -374,7 +374,7 @@ message DeleteWidgetResponse {
 
 message UpdateWidget {
   string        widget_id = 1;
-  optional bool enabled   = 2;
+  bool enabled   = 2;
 }
 
 message UpdateWidgetResponse {
@@ -556,8 +556,8 @@ message RemoveParticipantResponse {
 
 message GenerateInviteLink {
   string         chat_id    = 1;
-  optional int64 expires_at = 2; // unix ms, 0/unset = never expires
-  optional int32 max_uses   = 3; // 0/unset = unlimited
+  int64 expires_at = 2; // unix ms, 0/unset = never expires
+  int32 max_uses   = 3; // 0/unset = unlimited
 }
 
 message GenerateInviteLinkResponse {
@@ -679,7 +679,7 @@ message ServerMessage {
   // (0/absent for server-initiated pushes — envelope, presence, profile
   // updates, etc. — which aren't responses to any single request). See
   // ClientMessage.request_id for the full rationale.
-  optional uint32 request_id = 73;
+  uint32 request_id = 73;
 
   oneof payload {
     AuthResponse           auth_response            = 1;
@@ -956,7 +956,7 @@ message AccessInfo {
 
   // From access.config.json's per-tier limits.devices — absent means no
   // limit is enforced (e.g. admin's "*": null tier config), not zero.
-  optional int64 max_devices = 8;
+  int64 max_devices = 8;
 }
 
 message AuthResponse {
@@ -970,10 +970,10 @@ message AuthResponse {
 
   message Pending {
     bool          beta                    = 1;
-    optional bool device_refresh_required = 2;
+    bool device_refresh_required = 2;
   }
 
-  optional Pending pending = 8;
+  Pending pending = 8;
 
   PrivacySettings settings = 9;
 }
@@ -1023,7 +1023,7 @@ message ChatInfo {
   string          type         = 1; // "one-on-one" | "group"
   int64           chat_version = 2;
   repeated string participants = 3;
-  optional Meta   meta         = 4;
+  Meta   meta         = 4;
   string          chat_id      = 5;
   string          created_by   = 6;
   int64           created_at   = 7;
@@ -1173,7 +1173,7 @@ message ProfileUpdatedEvent {
 
 // Opt-in gate requiring explicit approval before a 1:1 chat materializes.
 message UpdatePrivacySettings {
-  optional bool require_chat_approval = 1;
+  bool require_chat_approval = 1;
 }
 
 message PrivacySettings {
@@ -1337,7 +1337,7 @@ message InitiatePurchase {
   string account = 1;
   string plan    = 2; // "pro"
 
-  optional string pro_observation_jwt = 3;
+  string pro_observation_jwt = 3;
 }
 
 message PaymentTxn {
@@ -1368,13 +1368,13 @@ message PaymentTxn {
 message InitiatePurchaseResponse {
   ResponseStatus status = 1;
 
-  optional string     intent_id = 2;
-  optional PaymentTxn payment   = 3;
+  string     intent_id = 2;
+  PaymentTxn payment   = 3;
 
-  optional Subscription   subscription    = 4;
-  optional ExistingIntent existing_intent = 5;
+  Subscription   subscription    = 4;
+  ExistingIntent existing_intent = 5;
 
-  optional AlreadySubscribedInfo already_subscribed = 6;
+  AlreadySubscribedInfo already_subscribed = 6;
 }
 
 message AlreadySubscribedInfo {
@@ -1404,8 +1404,8 @@ message ClaimProResponse {
 
 message VerifyPurchase {
   string          intent_id           = 1;
-  optional string tx_hash             = 2;
-  optional string pro_observation_jwt = 3;
+  string tx_hash             = 2;
+  string pro_observation_jwt = 3;
 }
 
 message VerifyPurchaseResponse {
@@ -1496,9 +1496,9 @@ message UpdateChatRolesResponse {
 
 message UpgradeContract {
   string bundle = 1;
-  optional string bundle_signature   = 2;
-  optional string bundle_public_key  = 3;
-  optional uint64 expires_at         = 4;
+  string bundle_signature   = 2;
+  string bundle_public_key  = 3;
+  uint64 expires_at         = 4;
 }
 
 message UpgradeContractResponse {
