@@ -10,6 +10,40 @@
 #include "evergram.pb-c.h"
 #include "transport.h"
 
+/* Definicao completa da estrutura interna (deve ser consistente com evergram.c) */
+struct evergram {
+    char *server_url;
+    evergram_wallet_t wallet;
+    evergram_device_t device;
+    void *ws_context;
+    evergram_state_t state;
+    evergram_hs_state_t hs_state;
+    unsigned char session_key[32];
+    bool session_keys_ready;
+    uint64_t send_nonce;
+    uint64_t recv_nonce;
+    uint8_t *recv_buffer;
+    size_t recv_buffer_size;
+    size_t recv_buffer_len;
+    time_t handshake_start_time;
+    
+    /* Campos para handshake e autenticacao */
+    uint8_t auth_challenge_nonce[256];
+    size_t auth_challenge_nonce_len;
+    bool auth_challenge_received;
+    bool device_registered;
+    
+    /* Callbacks */
+    evergram_message_callback on_message;
+    evergram_reaction_callback on_reaction;
+    evergram_typing_callback on_typing;
+    evergram_error_callback on_error;
+    evergram_connected_callback on_connected;
+    evergram_disconnected_callback on_disconnected;
+    evergram_chat_synced_callback on_chat_synced;
+    void *user_data;
+};
+
 /* Converter hex string para bytes */
 static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
     size_t hex_len = strlen(hex);
@@ -27,18 +61,33 @@ static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
     return (int)bytes_len;
 }
 
-static int sign_challenge(const evergram_wallet_t *wallet, const char *challenge, size_t challenge_len, uint8_t *signature) {
-    /* Converter private_key_hex para bytes */
-    unsigned char secret_key_bytes[64];  /* Ed25519 secret key = 64 bytes */
-    
-    int sk_len = hex_to_bytes(wallet->private_key_hex, secret_key_bytes, sizeof(secret_key_bytes));
-    if (sk_len <= 0) {
-        fprintf(stderr, "[Handshake] Erro ao converter private key hex\n");
+/* Assinar desafio com wallet XRPL */
+static int sign_challenge(const uint8_t *secret_key_bytes, const char *address, 
+                          const char *device_id, const uint8_t *nonce, size_t nonce_len, 
+                          uint8_t *signature_out) {
+    /* Construir mensagem: "evergram-auth:{address}:{deviceId}:{nonce}" */
+    char challenge[512];
+    int len = snprintf(challenge, sizeof(challenge), "evergram-auth:%s:%s:", address, device_id);
+    if (len < 0 || len >= (int)sizeof(challenge)) {
         return -1;
     }
     
+    /* Adicionar nonce em hex */
+    char nonce_hex[65];
+    if (nonce_len > 32) return -1;
+    
+    for (size_t i = 0; i < nonce_len; i++) {
+        sprintf(nonce_hex + i*2, "%02x", nonce[i]);
+    }
+    nonce_hex[nonce_len * 2] = '\0';
+    
+    strncat(challenge, nonce_hex, sizeof(challenge) - strlen(challenge) - 1);
+    
+    /* Assinar com Ed25519 */
     unsigned long long sig_len;
-    if (crypto_sign_detached(signature, &sig_len, (const uint8_t*)challenge, challenge_len, secret_key_bytes) != 0) {
+    if (crypto_sign_detached(signature_out, &sig_len, 
+                             (const uint8_t*)challenge, strlen(challenge), 
+                             secret_key_bytes) != 0) {
         fprintf(stderr, "[Handshake] Erro ao assinar desafio\n");
         return -1;
     }
@@ -49,22 +98,39 @@ static int sign_challenge(const evergram_wallet_t *wallet, const char *challenge
 int send_auth_response(evergram_t *eg) {
     if (!eg) return EVERGRAM_ERR_INVALID_PARAM;
     
-    /* Construir ChainIdentity */
-    Evergram__ChainIdentity identity = EVERGRAM__CHAIN_IDENTITY__INIT;
-    identity.address = eg->wallet.address;
-    identity.chain_family = EVERGRAM__CHAIN_FAMILY__XRPL;
-    identity.network_id = "0";
+    /* Cast para estrutura interna completa */
+    evergram_t *egi = eg;
     
-    /* Assinar o challenge */
-    uint8_t signature[64];
-    if (sign_challenge(&eg->wallet, (char*)eg->auth_challenge_nonce, eg->auth_challenge_nonce_len, signature) != 0) {
+    /* Converter private_key_hex para bytes */
+    unsigned char secret_key_bytes[64];
+    int sk_len = hex_to_bytes(egi->wallet.private_key_hex, secret_key_bytes, sizeof(secret_key_bytes));
+    if (sk_len <= 0) {
+        fprintf(stderr, "[Handshake] Erro ao converter private key hex\n");
         return EVERGRAM_ERR_CRYPTO;
     }
     
-    /* Criar SignedMessageProof */
+    /* Assinar o challenge */
+    uint8_t signature[64];
+    if (sign_challenge(secret_key_bytes, egi->wallet.address, egi->device.device_id,
+                       egi->auth_challenge_nonce, egi->auth_challenge_nonce_len, signature) != 0) {
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    
+    /* Construir ChainIdentity */
+    Evergram__ChainIdentity identity = EVERGRAM__CHAIN_IDENTITY__INIT;
+    identity.address = egi->wallet.address;
+    identity.chain_family = EVERGRAM__CHAIN_FAMILY__XRPL;
+    identity.network_id = "0";
+    
+    /* Criar SignedMessageProof - usa public_key_hex e signature_hex como strings hex */
+    char signature_hex[129];
+    for (int i = 0; i < 64; i++) {
+        sprintf(signature_hex + i*2, "%02x", signature[i]);
+    }
+    
     Evergram__SignedMessageProof signed_proof = EVERGRAM__SIGNED_MESSAGE_PROOF__INIT;
-    signed_proof.signed_message.data = signature;
-    signed_proof.signed_message.len = 64;
+    signed_proof.public_key_hex = egi->wallet.public_key_hex;
+    signed_proof.signature_hex = signature_hex;
     
     /* Criar AuthProof com signed_message */
     Evergram__AuthProof proof = EVERGRAM__AUTH_PROOF__INIT;
@@ -73,8 +139,8 @@ int send_auth_response(evergram_t *eg) {
     
     /* Criar Device */
     Evergram__Device device = EVERGRAM__DEVICE__INIT;
-    device.device_id = eg->device.device_id;
-    device.device_pub_hex = eg->device.pub_hex;
+    device.device_id = egi->device.device_id;
+    device.device_pub_hex = egi->device.pub_hex;
     device.platform = "Terminal";
     
     /* Criar Auth message */
@@ -97,7 +163,7 @@ int send_auth_response(evergram_t *eg) {
     evergram__client_message__pack(&msg, packed);
     
     /* Enviar via transporte */
-    ws_transport_t *transport = (ws_transport_t*)eg->ws_context;
+    ws_transport_t *transport = (ws_transport_t*)egi->ws_context;
     if (!transport) {
         free(packed);
         return EVERGRAM_ERR_NOT_CONNECTED;
@@ -108,7 +174,61 @@ int send_auth_response(evergram_t *eg) {
     
     if (ret == EVERGRAM_SUCCESS) {
         printf("[Handshake] Mensagem Auth enviada\n");
-        eg->hs_state = EVERGRAM_HS_AUTHENTICATED;
+        egi->hs_state = EVERGRAM_HS_AUTHENTICATED;
+    }
+    
+    return ret;
+}
+
+/* Enviar mensagem de registro de dispositivo */
+static int send_register_device(evergram_t *eg) {
+    if (!eg) return EVERGRAM_ERR_INVALID_PARAM;
+    
+    /* Cast para estrutura interna completa */
+    evergram_t *egi = eg;
+    
+    /* Construir ChainIdentity */
+    Evergram__ChainIdentity identity = EVERGRAM__CHAIN_IDENTITY__INIT;
+    identity.address = egi->wallet.address;
+    identity.chain_family = EVERGRAM__CHAIN_FAMILY__XRPL;
+    identity.network_id = "0";
+    
+    /* Criar Device */
+    Evergram__Device device = EVERGRAM__DEVICE__INIT;
+    device.device_id = egi->device.device_id;
+    device.device_pub_hex = egi->device.pub_hex;
+    device.platform = "Terminal";
+    
+    /* Criar RegisterDevice message */
+    Evergram__RegisterDevice register_dev = EVERGRAM__REGISTER_DEVICE__INIT;
+    register_dev.identity = &identity;
+    register_dev.device = &device;
+    
+    /* Criar ClientMessage */
+    Evergram__ClientMessage msg = EVERGRAM__CLIENT_MESSAGE__INIT;
+    msg.register_device = &register_dev;
+    
+    /* Serializar protobuf */
+    size_t packed_size = evergram__client_message__get_packed_size(&msg);
+    uint8_t *packed = malloc(packed_size);
+    if (!packed) {
+        return EVERGRAM_ERR_MEMORY;
+    }
+    
+    evergram__client_message__pack(&msg, packed);
+    
+    /* Enviar via transporte */
+    ws_transport_t *transport = (ws_transport_t*)egi->ws_context;
+    if (!transport) {
+        free(packed);
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    int ret = transport_send(transport, packed, packed_size);
+    free(packed);
+    
+    if (ret == EVERGRAM_SUCCESS) {
+        printf("[Handshake] Mensagem RegisterDevice enviada\n");
     }
     
     return ret;
@@ -118,7 +238,8 @@ int evergram_perform_handshake(evergram_t *eg) {
     if (!eg) return EVERGRAM_ERR_INVALID_PARAM;
     
     printf("[Handshake] Iniciando handshake...\n");
-    eg->hs_state = EVERGRAM_HS_CONNECTING;
+    evergram_t *egi = eg;
+    egi->hs_state = EVERGRAM_HS_CONNECTING;
     
     /* O handshake real acontece de forma assincrona */
     return EVERGRAM_SUCCESS;
