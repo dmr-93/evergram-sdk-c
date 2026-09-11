@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "evergram.h"
-#include "protobuf_generated.h"
+#include "evergram.pb-c.h"
 
 /* Estrutura interna */
 struct evergram {

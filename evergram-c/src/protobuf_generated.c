@@ -6,7 +6,7 @@
 #define PROTOBUF_C__NO_DEPRECATED
 #endif
 
-#include "protobuf_generated.h"
+#include "evergram.pb-c.h"
 void   evergram__client_hello__init
                      (Evergram__ClientHello         *message)
 {
