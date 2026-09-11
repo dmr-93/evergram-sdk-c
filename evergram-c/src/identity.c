@@ -3,19 +3,20 @@
 #include <string.h>
 #include <sodium.h>
 #include "evergram.h"
+#include "proto/evergram.pb-c.h"
 
 // Implementação de evergram_strerror
 const char* evergram_strerror(evergram_error_t err) {
-    switch (err) {
-        case EVERGRAM_SUCCESS: return "Success";
-        case EVERGRAM_ERR_INVALID_PARAM: return "Invalid parameter";
-        case EVERGRAM_ERR_MEMORY: return "Out of memory";
-        case EVERGRAM_ERR_PROTO: return "Protocol error";
-        case EVERGRAM_ERR_CRYPTO: return "Cryptographic error";
-        case EVERGRAM_ERR_NETWORK: return "Network error";
-        case EVERGRAM_ERR_AUTH: return "Authentication failed";
-        case EVERGRAM_ERR_NOT_CONNECTED: return "Not connected";
-        case EVERGRAM_ERR_TIMEOUT: return "Operation timeout";
+    switch ((int)err) {
+        case 0: return "Success";
+        case 1: return "Invalid parameter";
+        case 2: return "Out of memory";
+        case 3: return "Protocol error";
+        case 4: return "Cryptographic error";
+        case 5: return "Network error";
+        case 6: return "Authentication failed";
+        case 7: return "Not connected";
+        case 8: return "Operation timeout";
         default: return "Unknown error";
     }
 }

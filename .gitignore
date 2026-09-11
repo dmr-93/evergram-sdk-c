@@ -1,19 +1,9 @@
 ```
 # Compiled and build artifacts
+*.a
+*.so
 *.o
 *.obj
 *.out
-bin/
-# Dependencies
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-# Environment
-.env
-.env.local
-*.env.*
-# Editors
-.vscode/
-.idea/
+lib/
 ```
