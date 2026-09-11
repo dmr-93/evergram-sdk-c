@@ -22,9 +22,6 @@ extern int transport_connect(const char *url, void **ws_context);
 extern int transport_send(void *ws_context, const uint8_t *data, size_t len);
 extern int transport_poll(void *ws_context, uint8_t *buffer, size_t max_len, int timeout_ms);
 extern void transport_disconnect(void *ws_context);
-extern int nonce_manager_init(nonce_manager_t *mgr);
-extern int nonce_manager_get_next_send_nonce(nonce_manager_t *mgr, uint64_t *nonce);
-extern int nonce_manager_verify_recv_nonce(nonce_manager_t *mgr, uint64_t nonce);
 extern int xrpl_generate_wallet(evergram_wallet_t *wallet);
 extern int xrpl_generate_device(evergram_device_t *device, const evergram_wallet_t *wallet);
 
