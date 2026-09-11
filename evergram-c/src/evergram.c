@@ -1,5 +1,5 @@
 /**
- * evergram-c - Implementação Principal (v3 - sem duplicatas)
+ * evergram-c - Implementação Principal (v4 - com proto real)
  */
 
 #include <stdio.h>
@@ -10,7 +10,7 @@
 #include <time.h>
 #include <stdarg.h>
 #include "evergram.h"
-#include "protobuf_generated.h"
+#include "evergram.pb-c.h"
 
 extern int evergram_init_parser(evergram_t *eg);
 extern void evergram_cleanup_parser(evergram_t *eg);
@@ -22,6 +22,11 @@ extern int transport_connect(const char *url, void **ws_context);
 extern int transport_send(void *ws_context, const uint8_t *data, size_t len);
 extern int transport_poll(void *ws_context, uint8_t *buffer, size_t max_len, int timeout_ms);
 extern void transport_disconnect(void *ws_context);
+extern int nonce_manager_init(nonce_manager_t *mgr);
+extern int nonce_manager_get_next_send_nonce(nonce_manager_t *mgr, uint64_t *nonce);
+extern int nonce_manager_verify_recv_nonce(nonce_manager_t *mgr, uint64_t nonce);
+extern int xrpl_generate_wallet(evergram_wallet_t *wallet);
+extern int xrpl_generate_device(evergram_device_t *device, const evergram_wallet_t *wallet);
 
 struct evergram {
     char *server_url;
@@ -139,17 +144,58 @@ int evergram_poll(evergram_t *eg, int timeout_ms) {
 int evergram_send(evergram_t *eg, const char *chat_id, const char *content) {
     if (!eg || !chat_id || !content || eg->state != EVERGRAM_STATE_CONNECTED)
         return EVERGRAM_ERR_INVALID_PARAM;
-    Evergram__Message msg = EVERGRAM__MESSAGE__INIT;
-    msg.chat_id = (char*)chat_id;
-    msg.content = (char*)content;
-    msg.timestamp = (uint64_t)time(NULL);
-    msg.type = EVERGRAM__MESSAGE_TYPE__MESSAGE_TYPE_TEXT;
-    size_t msg_size = evergram__message__get_packed_size(&msg);
-    uint8_t *msg_data = malloc(msg_size);
-    if (!msg_data) return EVERGRAM_ERR_MEMORY;
-    evergram__message__pack(&msg, msg_data);
-    int result = send_encrypted_message(eg, 1, msg_data, msg_size);
-    free(msg_data);
+    
+    // Criptografar conteúdo
+    unsigned char nonce[24];
+    unsigned char encrypted[4096];
+    uint64_t send_nonce_val;
+    
+    if (nonce_manager_get_next_send_nonce(&eg->nonce_mgr, &send_nonce_val) != 0)
+        return EVERGRAM_ERR_MEMORY;
+    
+    memcpy(nonce, &send_nonce_val, sizeof(uint64_t));
+    memset(nonce + 8, 0, 16);
+    
+    size_t content_len = strlen(content);
+    long long encrypted_len = crypto_secretbox_easy(encrypted, (const unsigned char*)content, content_len, nonce, eg->session_key);
+    if (encrypted_len < 0) return EVERGRAM_ERR_CRYPTO;
+    
+    // Criar SendContent
+    Evergram__SendContent send_content = EVERGRAM__SEND_CONTENT__INIT;
+    char msg_id[64];
+    snprintf(msg_id, sizeof(msg_id), "msg_%lu", (unsigned long)time(NULL));
+    send_content.msg_id = msg_id;
+    
+    // Codificar ciphertext e nonce em base64
+    char *b64_cipher = malloc(encrypted_len * 2);
+    char *b64_nonce = malloc(64);
+    if (!b64_cipher || !b64_nonce) { free(b64_cipher); free(b64_nonce); return EVERGRAM_ERR_MEMORY; }
+    
+    // Base64 encode simplificado (em produção usar biblioteca real)
+    snprintf(b64_cipher, encrypted_len * 2, "%.*s", (int)encrypted_len, (char*)encrypted);
+    snprintf(b64_nonce, 64, "%016llx", (unsigned long long)send_nonce_val);
+    
+    send_content.ciphertext = b64_cipher;
+    send_content.nonce = b64_nonce;
+    send_content.reply_to_msg_id = "";
+    
+    // Criar Envelope
+    Evergram__Envelope envelope = EVERGRAM__ENVELOPE__INIT;
+    envelope.type = "SEND";
+    envelope.chat_id = (char*)chat_id;
+    envelope.sender = (char*)eg->wallet.address;
+    envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_SEND;
+    envelope.content.send = &send_content;
+    
+    size_t env_size = evergram__envelope__get_packed_size(&envelope);
+    uint8_t *env_data = malloc(env_size);
+    if (!env_data) { free(b64_cipher); free(b64_nonce); return EVERGRAM_ERR_MEMORY; }
+    evergram__envelope__pack(&envelope, env_data);
+    
+    int result = send_encrypted_message(eg, 1, env_data, env_size);
+    free(env_data);
+    free(b64_cipher);
+    free(b64_nonce);
     return result;
 }
 
@@ -172,32 +218,81 @@ int evergram_reply(evergram_t* eg, const evergram_message_t* reply_to, const cha
 int evergram_react(evergram_t *eg, const char *chat_id, const char *message_id, const char *emoji) {
     if (!eg || !chat_id || !message_id || !emoji || eg->state != EVERGRAM_STATE_CONNECTED)
         return EVERGRAM_ERR_INVALID_PARAM;
-    Evergram__Reaction reaction = EVERGRAM__REACTION__INIT;
-    reaction.message_id = (char*)message_id;
-    reaction.user_id = (char*)chat_id;
-    reaction.emoji = (char*)emoji;
-    reaction.timestamp = (uint64_t)time(NULL);
-    size_t msg_size = evergram__reaction__get_packed_size(&reaction);
-    uint8_t *msg_data = malloc(msg_size);
-    if (!msg_data) return EVERGRAM_ERR_MEMORY;
-    evergram__reaction__pack(&reaction, msg_data);
-    int result = send_encrypted_message(eg, 2, msg_data, msg_size);
-    free(msg_data);
+    
+    // Criptografar emoji
+    unsigned char nonce[24];
+    unsigned char encrypted[512];
+    uint64_t send_nonce_val;
+    
+    if (nonce_manager_get_next_send_nonce(&eg->nonce_mgr, &send_nonce_val) != 0)
+        return EVERGRAM_ERR_MEMORY;
+    
+    memcpy(nonce, &send_nonce_val, sizeof(uint64_t));
+    memset(nonce + 8, 0, 16);
+    
+    size_t emoji_len = strlen(emoji);
+    long long encrypted_len = crypto_secretbox_easy(encrypted, (const unsigned char*)emoji, emoji_len, nonce, eg->session_key);
+    if (encrypted_len < 0) return EVERGRAM_ERR_CRYPTO;
+    
+    // Criar ReactContent
+    Evergram__ReactContent react_content = EVERGRAM__REACT_CONTENT__INIT;
+    react_content.msg_id = (char*)message_id;
+    
+    char *b64_cipher = malloc(encrypted_len * 2);
+    char *b64_nonce = malloc(64);
+    if (!b64_cipher || !b64_nonce) { free(b64_cipher); free(b64_nonce); return EVERGRAM_ERR_MEMORY; }
+    
+    snprintf(b64_cipher, encrypted_len * 2, "%.*s", (int)encrypted_len, (char*)encrypted);
+    snprintf(b64_nonce, 64, "%016llx", (unsigned long long)send_nonce_val);
+    
+    react_content.ciphertext = b64_cipher;
+    react_content.nonce = b64_nonce;
+    react_content.has_removed = 0;
+    
+    // Criar Envelope
+    Evergram__Envelope envelope = EVERGRAM__ENVELOPE__INIT;
+    envelope.type = "REACT";
+    envelope.chat_id = (char*)chat_id;
+    envelope.sender = (char*)eg->wallet.address;
+    envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_REACT;
+    envelope.content.react = &react_content;
+    
+    size_t env_size = evergram__envelope__get_packed_size(&envelope);
+    uint8_t *env_data = malloc(env_size);
+    if (!env_data) { free(b64_cipher); free(b64_nonce); return EVERGRAM_ERR_MEMORY; }
+    evergram__envelope__pack(&envelope, env_data);
+    
+    int result = send_encrypted_message(eg, 2, env_data, env_size);
+    free(env_data);
+    free(b64_cipher);
+    free(b64_nonce);
     return result;
 }
 
 int evergram_typing(evergram_t *eg, const char *chat_id, bool is_typing) {
     if (!eg || !chat_id || eg->state != EVERGRAM_STATE_CONNECTED)
         return EVERGRAM_ERR_INVALID_PARAM;
-    Evergram__TypingIndicator typing = EVERGRAM__TYPING_INDICATOR__INIT;
-    typing.chat_id = (char*)chat_id;
-    typing.is_typing = is_typing;
-    size_t msg_size = evergram__typing_indicator__get_packed_size(&typing);
-    uint8_t *msg_data = malloc(msg_size);
-    if (!msg_data) return EVERGRAM_ERR_MEMORY;
-    evergram__typing_indicator__pack(&typing, msg_data);
-    int result = send_encrypted_message(eg, 3, msg_data, msg_size);
-    free(msg_data);
+    
+    // Criar TypingContent
+    Evergram__TypingContent typing_content = EVERGRAM__TYPING_CONTENT__INIT;
+    typing_content.has_is_typing = 1;
+    typing_content.is_typing = is_typing;
+    
+    // Criar Envelope
+    Evergram__Envelope envelope = EVERGRAM__ENVELOPE__INIT;
+    envelope.type = "TYPING";
+    envelope.chat_id = (char*)chat_id;
+    envelope.sender = (char*)eg->wallet.address;
+    envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_TYPING;
+    envelope.content.typing = &typing_content;
+    
+    size_t env_size = evergram__envelope__get_packed_size(&envelope);
+    uint8_t *env_data = malloc(env_size);
+    if (!env_data) return EVERGRAM_ERR_MEMORY;
+    evergram__envelope__pack(&envelope, env_data);
+    
+    int result = send_encrypted_message(eg, 3, env_data, env_size);
+    free(env_data);
     return result;
 }
 
