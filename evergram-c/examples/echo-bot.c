@@ -36,7 +36,7 @@ void on_message(evergram_t* eg, const evergram_message_t* msg) {
     
     // Responder com eco
     printf("Respondendo...\n");
-    int ret = evergram_reply(eg, msg, "Você disse: %s", msg->text);
+    int ret = evergram_reply(eg, msg, "Echo: %s", msg->text);
     if (ret != EVERGRAM_SUCCESS) {
         fprintf(stderr, "Erro ao responder: %s\n", evergram_strerror(ret));
     }
@@ -74,18 +74,11 @@ void on_error(evergram_t* eg, evergram_error_t error, const char* message) {
 
 // Callback para conexão estabelecida
 void on_connected(evergram_t* eg) {
-    printf("[CONECTADO] Bot online e pronto para receber mensagens!\n");
-    
-    // Enviar mensagem de teste para a carteira específica
-    const char* target_wallet = "rNPvaf8QNuUFh9xoRTj48BdoodWSywywdw";
-    const char* test_message = "teste";
-    
-    printf("Enviando mensagem de teste para %s...\n", target_wallet);
-    int ret = evergram_send(eg, target_wallet, test_message);
-    if (ret != EVERGRAM_SUCCESS) {
-        fprintf(stderr, "Erro ao enviar mensagem de teste: %s\n", evergram_strerror(ret));
+    evergram_wallet_t* wallet = (evergram_wallet_t*)evergram_get_user_data(eg);
+    if (wallet) {
+        printf("[CONECTADO] Bot online como %s\n", wallet->address);
     } else {
-        printf("Mensagem de teste enviada com sucesso!\n");
+        printf("[CONECTADO] Bot online e pronto para receber mensagens!\n");
     }
 }
 
@@ -233,7 +226,7 @@ int main(int argc, char* argv[]) {
         .max_participants = 250,
         .request_timeout_ms = 30000,
         .auto_reconnect = true,
-        .user_data = NULL
+        .user_data = &wallet
     };
     
     // Criar instância
