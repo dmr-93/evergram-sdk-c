@@ -97,7 +97,7 @@ evergram_t* evergram_create(const evergram_options_t* options) {
     eg->recv_buffer_len = 0;
     
     /* Criar transporte WebSocket */
-    eg->ws_context = transport_create(eg);
+    eg->ws_context = transport_init(eg, eg->server_url);
     if (!eg->ws_context) {
         free(eg->recv_buffer);
         free(eg->server_url);
@@ -217,4 +217,108 @@ void* evergram_get_user_data(evergram_t* eg) {
 /* evergram_set_user_data - define dados do usuário */
 void evergram_set_user_data(evergram_t* eg, void* user_data) {
     if (eg) eg->user_data = user_data;
+}
+
+/* evergram_start - inicia conexão com o gateway */
+int evergram_start(evergram_t* eg) {
+    if (!eg) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    /* Extrair host, porta e path da URL */
+    const char* url = eg->server_url;
+    const char* host = NULL;
+    int port = 443;
+    const char* path = "/";
+    int use_ssl = 1;
+    
+    /* Parse simples da URL: wss://host:port/path ou ws://host:port/path */
+    if (strncmp(url, "wss://", 6) == 0) {
+        host = url + 6;
+        use_ssl = 1;
+        port = 443;
+    } else if (strncmp(url, "ws://", 5) == 0) {
+        host = url + 5;
+        use_ssl = 0;
+        port = 80;
+    } else {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    /* Encontrar porta e path */
+    const char* port_start = strchr(host, ':');
+    const char* path_start = strchr(host, '/');
+    
+    if (port_start && (!path_start || port_start < path_start)) {
+        /* Tem porta explícita */
+        size_t host_len = port_start - host;
+        char host_buf[256];
+        if (host_len >= sizeof(host_buf)) {
+            host_len = sizeof(host_buf) - 1;
+        }
+        strncpy(host_buf, host, host_len);
+        host_buf[host_len] = '\0';
+        
+        port = atoi(port_start + 1);
+        
+        if (path_start) {
+            path = path_start;
+        }
+        
+        /* Conectar usando transporte */
+        return transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path);
+    } else if (path_start) {
+        /* Sem porta, tem path */
+        char host_buf[256];
+        size_t host_len = path_start - host;
+        if (host_len >= sizeof(host_buf)) {
+            host_len = sizeof(host_buf) - 1;
+        }
+        strncpy(host_buf, host, host_len);
+        host_buf[host_len] = '\0';
+        
+        return transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path_start);
+    } else {
+        /* Sem porta, sem path */
+        char host_buf[256];
+        size_t len = strlen(host);
+        if (len >= sizeof(host_buf)) {
+            len = sizeof(host_buf) - 1;
+        }
+        strncpy(host_buf, host, len);
+        host_buf[len] = '\0';
+        
+        return transport_connect((ws_transport_t*)eg->ws_context, host_buf, port, use_ssl, path);
+    }
+}
+
+/* evergram_poll - processa eventos por um período determinado */
+int evergram_poll(evergram_t* eg, int timeout_ms) {
+    if (!eg || !eg->ws_context) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    return transport_poll((ws_transport_t*)eg->ws_context, timeout_ms);
+}
+
+/* evergram_send - envia mensagem para um chat */
+int evergram_send(evergram_t* eg, const char* chat_id, const char* text) {
+    if (!eg || !chat_id || !text) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!evergram_is_connected(eg)) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    /* TODO: Implementar envio real de mensagem criptografada via protocolo Evergram */
+    /* Por enquanto, apenas logamos a mensagem que seria enviada */
+    fprintf(stderr, "[Evergram] Enviando mensagem para %s: %s\\n", chat_id, text);
+    
+    /* Placeholder: enviar mensagem de texto simples */
+    /* Na implementação real, aqui seria montado o protobuf, criptografado, etc. */
+    const char* msg = text;
+    size_t len = strlen(msg);
+    
+    return transport_send((ws_transport_t*)eg->ws_context, (const uint8_t*)msg, len);
 }
