@@ -68,4 +68,30 @@ int transport_is_connected(ws_transport_t* transport);
  */
 evergram_state_t transport_get_state(ws_transport_t* transport);
 
+/**
+ * @brief Define callbacks externos para o transporte
+ * @param transport Ponteiro para transporte
+ * @param on_connected Callback de conexão estabelecida
+ * @param on_disconnected Callback de desconexão
+ * @param on_error Callback de erro
+ */
+void transport_set_callbacks(ws_transport_t* transport,
+                            void (*on_connected)(void*),
+                            void (*on_disconnected)(void*),
+                            void (*on_error)(void*, int, const char*));
+
+/**
+ * @brief Obtém buffer de recebimento
+ * @param transport Ponteiro para transporte
+ * @param len Ponteiro para tamanho dos dados (preenchido pela função)
+ * @return Buffer de dados recebidos ou NULL
+ */
+const char* transport_get_recv_buffer(ws_transport_t* transport, size_t* len);
+
+/**
+ * @brief Reseta buffer de recebimento após processamento
+ * @param transport Ponteiro para transporte
+ */
+void transport_reset_recv_buffer(ws_transport_t* transport);
+
 #endif // EVERGRAM_TRANSPORT_H

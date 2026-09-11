@@ -347,8 +347,7 @@ int evergram_start(evergram_t* eg) {
     }
 
     // Configurar callbacks do transporte
-    // Nota: transport é ws_transport_t*, precisamos acessar via ponteiro opaco
-    // Os callbacks são setados internamente no transport_init
+    transport_set_callbacks(eg->transport, on_ws_connected, on_ws_disconnected, on_ws_error);
     
     // Parse da URL para obter host, port, path
     // Formato: wss://host:port/path ou ws://host:port/path

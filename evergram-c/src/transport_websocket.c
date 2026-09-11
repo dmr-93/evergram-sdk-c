@@ -40,10 +40,22 @@ static int
 ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
             void* user, void* in, size_t len)
 {
-    ws_transport_t* transport = (ws_transport_t*)user;
+    // Obter transporte do contexto ou da sessão
+    ws_transport_t* transport = NULL;
+    
+    if (user) {
+        transport = (ws_transport_t*)user;
+    } else {
+        // Tentar obter do contexto
+        struct lws_context* context = lws_get_context(wsi);
+        if (context) {
+            transport = (ws_transport_t*)lws_context_user(context);
+        }
+    }
     (void)in;
     (void)len;
 
+    // Callback pode ser chamado com user=NULL em alguns casos
     if (!transport) {
         return 0;
     }
@@ -74,7 +86,7 @@ ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
 
         case LWS_CALLBACK_CLIENT_RECEIVE:
             // Recebimento de dados do servidor
-            if (len > 0) {
+            if (len > 0 && transport) {
                 // Expandir buffer se necessário
                 if (transport->recv_len + len + 1 > transport->recv_capacity) {
                     size_t new_capacity = (transport->recv_capacity == 0) ? 
@@ -98,7 +110,7 @@ ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
                 transport->recv_buffer[transport->recv_len] = '\0';
                 
                 // Logar recebimento (parse real será implementado depois)
-                fprintf(stderr, "[WebSocket] Recebido %zu bytes\n", len);
+                fprintf(stderr, "[WebSocket] Recebido %zu bytes\\n", len);
             }
             break;
 
@@ -128,8 +140,11 @@ static struct lws_protocols protocols[] = {
     {
         .name = "evergram-protocol",
         .callback = ws_callback,
-        .per_session_data_size = sizeof(ws_transport_t),
+        .per_session_data_size = 0,  // Não alocar dados por sessão aqui
         .rx_buffer_size = 0,  // Usar buffer padrão
+        .id = 0,
+        .user = NULL,
+        .tx_packet_size = 0,
     },
     { NULL, NULL, 0, 0, 0, NULL, 0 }  // Terminador
 };
@@ -153,6 +168,8 @@ ws_transport_t* transport_init(evergram_t* eg, const char* url) {
     transport->recv_capacity = 0;
     transport->connection_completed = 0;
     transport->should_close = 0;
+    transport->wsi = NULL;
+    transport->context = NULL;
     
     // Inicializar callbacks externos como NULL
     // O evergram.c setará esses callbacks via funções específicas se necessário
@@ -180,6 +197,30 @@ ws_transport_t* transport_init(evergram_t* eg, const char* url) {
 
     fprintf(stderr, "[WebSocket] Contexto criado com sucesso\n");
     return transport;
+}
+
+// Funções para setar callbacks externos
+void transport_set_callbacks(ws_transport_t* transport,
+                            void (*on_connected)(void*),
+                            void (*on_disconnected)(void*),
+                            void (*on_error)(void*, int, const char*)) {
+    if (!transport) return;
+    transport->ext_on_connected = on_connected;
+    transport->ext_on_disconnected = on_disconnected;
+    transport->ext_on_error = on_error;
+}
+
+// Getter para o buffer de recebimento
+const char* transport_get_recv_buffer(ws_transport_t* transport, size_t* len) {
+    if (!transport || !len) return NULL;
+    *len = transport->recv_len;
+    return transport->recv_buffer;
+}
+
+// Resetar buffer após processamento
+void transport_reset_recv_buffer(ws_transport_t* transport) {
+    if (!transport) return;
+    transport->recv_len = 0;
 }
 
 int transport_connect(ws_transport_t* transport, const char* host, int port, 
