@@ -188,6 +188,8 @@ ws_transport_t* transport_init(evergram_t* eg, const char* url) {
     info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
     info.timeout_secs = 10;
 
+    info.user = transport;  // Passar transporte como user data do contexto
+
     transport->context = lws_create_context(&info);
     if (!transport->context) {
         fprintf(stderr, "[WebSocket] Falha ao criar contexto\n");
