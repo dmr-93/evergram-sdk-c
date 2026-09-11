@@ -323,3 +323,31 @@ int transport_is_connected(ws_transport_t* transport) {
 evergram_state_t transport_get_state(ws_transport_t* transport) {
     return transport ? transport->state : EVERGRAM_STATE_DISCONNECTED;
 }
+
+// Implementação de transport_disconnect (faltante)
+void transport_disconnect(void *ws_context) {
+    if (!ws_context) return;
+    
+    ws_transport_t* transport = (ws_transport_t*)ws_context;
+    
+    // Cancelar pending connections
+    if (transport->wsi) {
+        lws_close_reason(transport->wsi, LWS_CLOSE_STATUS_NORMAL, NULL, 0);
+        transport->wsi = NULL;
+    }
+    
+    // Destruir contexto
+    if (transport->context) {
+        lws_context_destroy(transport->context);
+        transport->context = NULL;
+    }
+    
+    // Liberar buffer
+    free(transport->recv_buffer);
+    transport->recv_buffer = NULL;
+    transport->recv_len = 0;
+    transport->recv_capacity = 0;
+    
+    // Liberar estrutura
+    free(transport);
+}

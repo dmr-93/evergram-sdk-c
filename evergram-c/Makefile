@@ -30,7 +30,7 @@ LIB_DIR = lib
 BIN_DIR = bin
 
 # Arquivos fonte
-SRCS = $(wildcard $(SRC_DIR)/*.c)
+SRCS = $(wildcard $(SRC_DIR)/*.c) $(wildcard $(SRC_DIR)/proto/*.pb-c.c)
 OBJS = $(SRCS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
 
 # Biblioteca estática
@@ -51,6 +51,7 @@ dirs:
 
 # Compilar objetos
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Criar biblioteca estática
