@@ -1,5 +1,5 @@
 /**
- * evergram-c - Handshake Implementation (Real)
+ * evergram-c - Handshake Implementation (Real Proto Structures)
  */
 
 #include <stdio.h>
@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include "evergram.h"
-#include "protobuf_generated.h"
+#include "evergram.pb-c.h"
 #include <sodium.h>
 
 extern int transport_send(void *ws_context, const uint8_t *data, size_t len);
@@ -46,60 +46,91 @@ struct evergram {
 };
 
 /**
- * Constrói mensagem ClientHello usando protobuf
+ * Constrói mensagem Auth usando protobuf real da Evergram
+ * Envia via ClientMessage com payload_case = AUTH
  */
-static int build_client_hello(evergram_t *eg, uint8_t **out_data, size_t *out_len) {
+static int build_auth_message(evergram_t *eg, uint8_t **out_data, size_t *out_len) {
     if (!eg || !out_data || !out_len) return -1;
     
-    Evergram__ClientHello hello = EVERGRAM__CLIENT_HELLO__INIT;
-    Evergram__Envelope env = EVERGRAM__ENVELOPE__INIT;
+    /* Cria estrutura Auth */
+    Evergram__Auth auth = EVERGRAM__AUTH__INIT;
+    Evergram__ClientMessage client_msg = EVERGRAM__CLIENT_MESSAGE__INIT;
     
-    /* Gera nonce aleatório */
+    /* Gera nonce aleatório para a sessão */
     uint8_t nonce[24];
     randombytes_buf(nonce, sizeof(nonce));
     
-    hello.version = strdup("1.0.0");
-    hello.ephemeral_public_key.len = 32;
-    hello.ephemeral_public_key.data = eg->ephemeral_public;
-    hello.nonce.len = sizeof(nonce);
-    hello.nonce.data = nonce;
-    hello.device_id = eg->device.device_id;
-    hello.wallet_address = eg->wallet.address;
+    /* Cria ChainIdentity com wallet address */
+    Evergram__ChainIdentity identity = EVERGRAM__CHAIN_IDENTITY__INIT;
+    identity.address = eg->wallet.address;
+    identity.chain_family = EVERGRAM__CHAIN_FAMILY__XRPL;
     
-    /* Assina o ClientHello com a chave privada da carteira */
+    /* Cria AuthProof com assinatura */
+    Evergram__AuthProof proof = EVERGRAM__AUTH_PROOF__INIT;
+    
+    /* Mensagem para assinar: nonce + ephemeral public key */
+    unsigned char msg_to_sign[56];
+    memcpy(msg_to_sign, nonce, 24);
+    memcpy(msg_to_sign + 24, eg->ephemeral_public, 32);
+    
+    /* Assina com chave privada da carteira (Ed25519) */
     unsigned char signature[64];
-    unsigned char msg_to_sign[128];
-    memcpy(msg_to_sign, eg->ephemeral_public, 32);
-    memcpy(msg_to_sign + 32, nonce, 24);
-    memcpy(msg_to_sign + 56, eg->device.device_id, strlen(eg->device.device_id));
+    unsigned char wallet_priv_bin[32];
     
-    if (crypto_sign_detached(signature, NULL, msg_to_sign, 56 + strlen(eg->device.device_id),
-                             (unsigned char*)eg->wallet.private_key_hex) != 0) {
-        free(hello.version);
+    /* Converte hex para binário */
+    if (sodium_hex2bin(wallet_priv_bin, 32, eg->wallet.private_key_hex, 
+                       strlen(eg->wallet.private_key_hex), NULL, NULL, NULL) != 0) {
+        fprintf(stderr, "[handshake] Failed to convert wallet private key from hex\\n");
         return -1;
     }
-    hello.signature.len = 64;
-    hello.signature.data = signature;
     
-    /* Monta o envelope */
-    env.payload_case = EVERGRAM__ENVELOPE__PAYLOAD_CLIENT_HELLO;
-    env.client_hello = &hello;
-    env.nonce.len = sizeof(nonce);
-    env.nonce.data = nonce;
+    if (crypto_sign_detached(signature, NULL, msg_to_sign, sizeof(msg_to_sign),
+                             wallet_priv_bin) != 0) {
+        fprintf(stderr, "[handshake] Failed to sign auth message\\n");
+        return -1;
+    }
+    
+    /* Configura proof como xrpl_signature */
+    proof.proof_case = EVERGRAM__AUTH_PROOF__PROOF_XRPL_SIGNATURE;
+    proof.xrpl_signature.len = 64;
+    proof.xrpl_signature.data = signature;
+    
+    /* Configura Device */
+    Evergram__Device device_proto = EVERGRAM__DEVICE__INIT;
+    device_proto.device_id = eg->device.device_id;
+    device_proto.public_key.len = 32;
+    
+    /* Converte device public key de hex para bin */
+    unsigned char device_pub_bin[32];
+    if (sodium_hex2bin(device_pub_bin, 32, eg->device.pub_hex,
+                       strlen(eg->device.pub_hex), NULL, NULL, NULL) != 0) {
+        fprintf(stderr, "[handshake] Failed to convert device public key from hex\\n");
+        return -1;
+    }
+    device_proto.public_key.data = device_pub_bin;
+    
+    /* Monta Auth */
+    auth.identity = &identity;
+    auth.proof = &proof;
+    auth.device = &device_proto;
+    
+    /* Monta ClientMessage */
+    client_msg.has_request_id = 1;
+    client_msg.request_id = 1;
+    client_msg.payload_case = EVERGRAM__CLIENT_MESSAGE__PAYLOAD_AUTH;
+    client_msg.auth = &auth;
     
     /* Serializa */
-    size_t len = evergram__envelope__get_packed_size(&env);
+    size_t len = evergram__client_message__get_packed_size(&client_msg);
     uint8_t *data = malloc(len);
     if (!data) {
-        free(hello.version);
         return -1;
     }
-    evergram__envelope__pack(&env, data);
+    evergram__client_message__pack(&client_msg, data);
     
     *out_data = data;
     *out_len = len;
     
-    free(hello.version);
     return 0;
 }
 
