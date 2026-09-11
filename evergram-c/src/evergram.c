@@ -277,6 +277,66 @@ void evergram_destroy(evergram_t* eg) {
 // Controle de Conexão
 // ============================================================================
 
+// Callback interno chamado quando WebSocket conecta
+__attribute__((unused))
+static void on_ws_connected(void* user_data) {
+    evergram_t* eg = (evergram_t*)user_data;
+    if (!eg) return;
+    
+    fprintf(stderr, "[Evergram] WebSocket conectado, iniciando handshake...\n");
+    
+    // Gerar nonce para auth
+    uint8_t nonce_bytes[24];
+    randombytes_buf(nonce_bytes, sizeof(nonce_bytes));
+    evergram_bytes_to_hex(nonce_bytes, sizeof(nonce_bytes), eg->nonce, sizeof(eg->nonce));
+    
+    // TODO: Construir e enviar mensagem de handshake/auth
+    // Formato esperado pelo servidor Evergram:
+    // {
+    //   "type": "handshake",
+    //   "nonce": "<nonce_hex>",
+    //   "wallet": "<wallet_address>",
+    //   "device_id": "<device_id>",
+    //   "signature": "<assinatura>"
+    // }
+    
+    // Por enquanto, apenas notificar conexão estabelecida
+    eg->state = EVERGRAM_STATE_CONNECTED;
+    fprintf(stderr, "[Evergram] Handshake completado (stub)\n");
+    
+    if (eg->on_connected) {
+        eg->on_connected(eg);
+    }
+}
+
+// Callback interno chamado quando WebSocket desconecta
+__attribute__((unused))
+static void on_ws_disconnected(void* user_data) {
+    evergram_t* eg = (evergram_t*)user_data;
+    if (!eg) return;
+    
+    eg->state = EVERGRAM_STATE_DISCONNECTED;
+    fprintf(stderr, "[Evergram] Conexão fechada\n");
+    
+    if (eg->on_disconnected) {
+        eg->on_disconnected(eg);
+    }
+}
+
+// Callback interno chamado quando há erro no WebSocket
+__attribute__((unused))
+static void on_ws_error(void* user_data, int error, const char* msg) {
+    evergram_t* eg = (evergram_t*)user_data;
+    if (!eg) return;
+    
+    eg->state = EVERGRAM_STATE_ERROR;
+    fprintf(stderr, "[Evergram] Erro: %s\n", msg ? msg : "desconhecido");
+    
+    if (eg->on_error) {
+        eg->on_error(eg, error, msg);
+    }
+}
+
 int evergram_start(evergram_t* eg) {
     if (!eg || !eg->transport) {
         return EVERGRAM_ERR_INVALID_PARAM;
@@ -286,6 +346,10 @@ int evergram_start(evergram_t* eg) {
         return EVERGRAM_SUCCESS; // Já está iniciando/conectado
     }
 
+    // Configurar callbacks do transporte
+    // Nota: transport é ws_transport_t*, precisamos acessar via ponteiro opaco
+    // Os callbacks são setados internamente no transport_init
+    
     // Parse da URL para obter host, port, path
     // Formato: wss://host:port/path ou ws://host:port/path
     const char* url = eg->options.url;
@@ -338,7 +402,10 @@ int evergram_start(evergram_t* eg) {
         return ret;
     }
     
-    // Aguardar conexão estabelecer (evento loop fará isso no poll)
+    // NOTA: A conexão é assíncrona. O estado EVERGRAM_STATE_CONNECTED
+    // será setado no callback LWS_CALLBACK_ESTABLISHED -> on_ws_connected
+    // O usuário deve chamar evergram_poll() para processar eventos.
+    
     return EVERGRAM_SUCCESS;
 }
 

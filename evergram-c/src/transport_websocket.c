@@ -26,10 +26,10 @@ struct ws_transport {
     int connection_completed;        // Flag de conexão completada
     int should_close;                // Flag para fechar conexão
     
-    // Callbacks (copiados do contexto principal)
-    void (*on_connected)(void* eg);
-    void (*on_disconnected)(void* eg);
-    void (*on_error)(void* eg, int error, const char* msg);
+    // Callbacks externos (setados pelo contexto principal)
+    void (*ext_on_connected)(void* eg);
+    void (*ext_on_disconnected)(void* eg);
+    void (*ext_on_error)(void* eg, int error, const char* msg);
 };
 
 // ============================================================================
@@ -54,9 +54,9 @@ ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
             transport->state = EVERGRAM_STATE_CONNECTED;
             transport->connection_completed = 1;
             
-            // Notificar callback de conexão
-            if (transport->on_connected) {
-                transport->on_connected(transport->eg);
+            // Notificar callback externo de conexão
+            if (transport->ext_on_connected) {
+                transport->ext_on_connected(transport->eg);
             }
             break;
 
@@ -66,8 +66,8 @@ ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
             transport->state = EVERGRAM_STATE_ERROR;
             transport->connection_completed = 1;
             
-            if (transport->on_error) {
-                transport->on_error(transport->eg, EVERGRAM_ERR_NETWORK, 
+            if (transport->ext_on_error) {
+                transport->ext_on_error(transport->eg, EVERGRAM_ERR_NETWORK, 
                                    in ? (const char*)in : "Connection error");
             }
             break;
@@ -111,8 +111,8 @@ ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
             transport->state = EVERGRAM_STATE_DISCONNECTED;
             transport->wsi = NULL;
             
-            if (transport->on_disconnected) {
-                transport->on_disconnected(transport->eg);
+            if (transport->ext_on_disconnected) {
+                transport->ext_on_disconnected(transport->eg);
             }
             break;
 
@@ -153,9 +153,12 @@ ws_transport_t* transport_init(evergram_t* eg, const char* url) {
     transport->recv_capacity = 0;
     transport->connection_completed = 0;
     transport->should_close = 0;
-    transport->on_connected = NULL;
-    transport->on_disconnected = NULL;
-    transport->on_error = NULL;
+    
+    // Inicializar callbacks externos como NULL
+    // O evergram.c setará esses callbacks via funções específicas se necessário
+    transport->ext_on_connected = NULL;
+    transport->ext_on_disconnected = NULL;
+    transport->ext_on_error = NULL;
 
     // Configurar estrutura do libwebsockets
     struct lws_context_creation_info info;

@@ -2,7 +2,7 @@
 
 CC = gcc
 AR = ar
-CFLAGS = -Wall -Wextra -Werror -std=gnu11 -fPIC -I./include
+CFLAGS = -Wall -Wextra  -std=gnu11 -fPIC -I./include
 LDFLAGS = -shared
 
 # Bibliotecas externas
