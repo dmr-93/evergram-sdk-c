@@ -1,6 +1,35 @@
 ```
 # Compiled and build artifacts
+*.o
+*.obj
 *.a
 *.so
-lib/
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Build directories
+obj/
+build/
+dist/
+
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Editors
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+*.env.*
 ```

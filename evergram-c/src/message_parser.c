@@ -51,6 +51,7 @@ extern int send_register_device(evergram_t *eg);
 
 /**
  * Processa dados recebidos do transporte
+ * Formato: bytes protobuf puros (sem header customizado)
  */
 int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t len) {
     if (!eg || !data || len == 0) {
@@ -73,123 +74,122 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
 
     int messages_processed = 0;
     
-    while (eg->recv_buffer_len >= 5) {
-        uint32_t payload_len = 
-            ((uint32_t)eg->recv_buffer[1] << 24) |
-            ((uint32_t)eg->recv_buffer[2] << 16) |
-            ((uint32_t)eg->recv_buffer[3] << 8) |
-            ((uint32_t)eg->recv_buffer[4]);
-
-        if (payload_len > 10000000) {
-            eg->recv_buffer_len = 0;
-            return -1;
+    /* Processar todos os bytes no buffer como uma mensagem protobuf completa */
+    if (eg->recv_buffer_len < 1) {
+        return 0;
+    }
+    
+    printf("[Parser] Processando %zu bytes de dados protobuf...\n", eg->recv_buffer_len);
+    printf("[Parser] Primeiros bytes: ");
+    for (size_t i = 0; i < (eg->recv_buffer_len < 20 ? eg->recv_buffer_len : 20); i++) {
+        printf("%02x ", eg->recv_buffer[i]);
+    }
+    printf("\n");
+    
+    /* Deserializar mensagem protobuf diretamente dos bytes recebidos */
+    Evergram__ServerMessage *server_msg = 
+        evergram__server_message__unpack(NULL, eg->recv_buffer_len, eg->recv_buffer);
+    
+    if (!server_msg) {
+        fprintf(stderr, "[Parser] Falha ao deserializar ServerMessage\n");
+        eg->recv_buffer_len = 0;  /* Limpar buffer para proxima tentativa */
+        return -1;
+    }
+    
+    /* Processar a mensagem */
+    messages_processed = 1;
+    
+    /* Verificar se e AuthChallenge */
+    if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_AUTH_CHALLENGE && server_msg->auth_challenge) {
+        printf("[Parser] AuthChallenge recebido\n");
+        
+        Evergram__AuthChallenge *chal = server_msg->auth_challenge;
+        if (chal->nonce && strlen(chal->nonce) <= sizeof(eg->auth_challenge_nonce)) {
+            memcpy(eg->auth_challenge_nonce, chal->nonce, strlen(chal->nonce));
+            eg->auth_challenge_nonce_len = strlen(chal->nonce);
+            eg->auth_challenge_received = true;
+            
+            /* Enviar resposta Auth */
+            send_auth_response(eg);
         }
-
-        size_t total_msg_len = 1 + 4 + payload_len;
+    }
+    /* Verificar se e AuthResponse */
+    else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_AUTH_RESPONSE && server_msg->auth_response) {
+        printf("[Parser] AuthResponse recebido\n");
         
-        if (eg->recv_buffer_len < total_msg_len) {
-            break;
+        Evergram__AuthResponse *auth_resp = server_msg->auth_response;
+        if (auth_resp && auth_resp->status && auth_resp->status->ok) {
+            eg->state = EVERGRAM_STATE_CONNECTED;
+            eg->hs_state = EVERGRAM_HS_AUTHENTICATED;
+            printf("[Parser] Autenticado com sucesso!\n");
+            
+            /* Chamar callback de conexao */
+            if (eg->on_connected) {
+                eg->on_connected(eg);
+            }
+        } else if (auth_resp && auth_resp->status && auth_resp->status->code && 
+                   strstr(auth_resp->status->code, "device_not_registered")) {
+            /* Device nao registrado - registrar e tentar novamente */
+            printf("[Parser] Device nao registrado, registrando...\n");
+            send_register_device(eg);
+            send_auth_response(eg);
+        } else {
+            fprintf(stderr, "[Parser] Falha na autenticacao: %s\n", 
+                    auth_resp && auth_resp->status && auth_resp->status->message 
+                    ? auth_resp->status->message : "unknown error");
+            if (eg->on_error) {
+                eg->on_error(eg, EVERGRAM_ERR_AUTH, "Authentication failed");
+            }
         }
-
-        const uint8_t *payload = eg->recv_buffer + 5;
+    }
+    /* Verificar se e Envelope (mensagem de chat recebida) */
+    else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ENVELOPE && server_msg->envelope) {
+        printf("[Parser] Envelope recebido\n");
         
-        /* Deserializar mensagem protobuf */
-        Evergram__ServerMessage *server_msg = 
-            evergram__server_message__unpack(NULL, payload_len, payload);
-        
-        if (server_msg) {
-            /* Verificar se e AuthChallenge */
-            if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_AUTH_CHALLENGE && server_msg->auth_challenge) {
-                printf("[Parser] AuthChallenge recebido\n");
-                
-                Evergram__AuthChallenge *chal = server_msg->auth_challenge;
-                if (chal->nonce && strlen(chal->nonce) <= sizeof(eg->auth_challenge_nonce)) {
-                    memcpy(eg->auth_challenge_nonce, chal->nonce, strlen(chal->nonce));
-                    eg->auth_challenge_nonce_len = strlen(chal->nonce);
-                    eg->auth_challenge_received = true;
-                    
-                    /* Enviar resposta Auth */
-                    send_auth_response(eg);
-                }
-            }
-            /* Verificar se e AuthResponse */
-            else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_AUTH_RESPONSE && server_msg->auth_response) {
-                printf("[Parser] AuthResponse recebido\n");
-                
-                Evergram__AuthResponse *auth_resp = server_msg->auth_response;
-                if (auth_resp && auth_resp->status && auth_resp->status->ok) {
-                    eg->state = EVERGRAM_STATE_CONNECTED;
-                    eg->hs_state = EVERGRAM_HS_AUTHENTICATED;
-                    printf("[Parser] Autenticado com sucesso!\n");
-                    
-                    /* Chamar callback de conexao */
-                    if (eg->on_connected) {
-                        eg->on_connected(eg);
-                    }
-                } else if (auth_resp && auth_resp->status && auth_resp->status->code && 
-                           strstr(auth_resp->status->code, "device_not_registered")) {
-                    /* Device nao registrado - registrar e tentar novamente */
-                    printf("[Parser] Device nao registrado, registrando...\n");
-                    send_register_device(eg);
-                    send_auth_response(eg);
-                } else {
-                    fprintf(stderr, "[Parser] Falha na autenticacao: %s\n", 
-                            auth_resp && auth_resp->status && auth_resp->status->message 
-                            ? auth_resp->status->message : "unknown error");
-                    if (eg->on_error) {
-                        eg->on_error(eg, EVERGRAM_ERR_AUTH, "Authentication failed");
-                    }
-                }
-            }
-            /* Verificar se e Envelope (mensagem de chat recebida) */
-            else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ENVELOPE && server_msg->envelope) {
-                printf("[Parser] Envelope recebido\n");
-                
-                Evergram__Envelope *env = server_msg->envelope;
-                if (env && env->chat_id && env->sender && env->send) {
-                    evergram_message_t msg;
-                    memset(&msg, 0, sizeof(msg));
-                    
-                    strncpy(msg.chat_id, env->chat_id, sizeof(msg.chat_id) - 1);
-                    strncpy(msg.sender, env->sender, sizeof(msg.sender) - 1);
-                    
-                    if (env->send->msg_id) {
-                        strncpy(msg.msg_id, env->send->msg_id, sizeof(msg.msg_id) - 1);
-                    }
-                    
-                    msg.timestamp = evergram_get_timestamp_ms();
-                    
-                    if (env->send->ciphertext) {
-                        msg.text = env->send->ciphertext;
-                    }
-                    
-                    if (env->send->reply_to_msg_id) {
-                        msg.reply_to_msg_id = (char*)env->send->reply_to_msg_id;
-                    }
-                    
-                    if (eg->on_message) {
-                        eg->on_message(eg, &msg);
-                    }
-                }
-            }
-            /* Verificar se e Error */
-            else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ERROR && server_msg->error) {
-                fprintf(stderr, "[Parser] ErrorResponse recebido\n");
-                
-                Evergram__Error *err = server_msg->error;
-                if (err && err->message && eg->on_error) {
-                    eg->on_error(eg, EVERGRAM_ERR_PROTO, err->message);
-                }
+        Evergram__Envelope *env = server_msg->envelope;
+        if (env && env->chat_id && env->sender && env->send) {
+            evergram_message_t msg;
+            memset(&msg, 0, sizeof(msg));
+            
+            strncpy(msg.chat_id, env->chat_id, sizeof(msg.chat_id) - 1);
+            strncpy(msg.sender, env->sender, sizeof(msg.sender) - 1);
+            
+            if (env->send->msg_id) {
+                strncpy(msg.msg_id, env->send->msg_id, sizeof(msg.msg_id) - 1);
             }
             
-            evergram__server_message__free_unpacked(server_msg, NULL);
+            msg.timestamp = evergram_get_timestamp_ms();
+            
+            if (env->send->ciphertext) {
+                msg.text = env->send->ciphertext;
+            }
+            
+            if (env->send->reply_to_msg_id) {
+                msg.reply_to_msg_id = (char*)env->send->reply_to_msg_id;
+            }
+            
+            if (eg->on_message) {
+                eg->on_message(eg, &msg);
+            }
         }
-        
-        messages_processed++;
-
-        memmove(eg->recv_buffer, eg->recv_buffer + total_msg_len, eg->recv_buffer_len - total_msg_len);
-        eg->recv_buffer_len -= total_msg_len;
     }
+    /* Verificar se e Error */
+    else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ERROR && server_msg->error) {
+        fprintf(stderr, "[Parser] ErrorResponse recebido\n");
+        
+        Evergram__Error *err = server_msg->error;
+        if (err && err->message && eg->on_error) {
+            eg->on_error(eg, EVERGRAM_ERR_PROTO, err->message);
+        }
+    }
+    else {
+        printf("[Parser] Mensagem de tipo desconhecido (payload_case: %d)\n", server_msg->payload_case);
+    }
+    
+    evergram__server_message__free_unpacked(server_msg, NULL);
+    
+    /* Limpar buffer apos processamento */
+    eg->recv_buffer_len = 0;
 
     return messages_processed;
 }
