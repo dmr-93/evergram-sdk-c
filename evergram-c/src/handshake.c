@@ -101,17 +101,32 @@ int send_auth_response(evergram_t *eg) {
     /* Cast para estrutura interna completa */
     evergram_t *egi = eg;
     
-    /* Converter private_key_hex para bytes */
-    unsigned char secret_key_bytes[64];
-    int sk_len = hex_to_bytes(egi->wallet.private_key_hex, secret_key_bytes, sizeof(secret_key_bytes));
-    if (sk_len <= 0) {
-        fprintf(stderr, "[Handshake] Erro ao converter private key hex\n");
+    /* Converter private_key_hex para bytes 
+     * Para libsodium, crypto_sign_detached precisa da secret key COMPLETA (64 bytes)
+     * A secret key Ed25519 é: seed (32 bytes) + public key (32 bytes)
+     * Nosso private_key_hex armazena apenas a seed (32 bytes = 64 caracteres hex)
+     * Precisamos reconstruir a secret key completa usando crypto_sign_seed_keypair
+     */
+    unsigned char seed_bytes[32];
+    int seed_len = hex_to_bytes(egi->wallet.private_key_hex, seed_bytes, sizeof(seed_bytes));
+    if (seed_len != 32) {
+        fprintf(stderr, "[Handshake] Erro ao converter seed hex (esperado 32 bytes, obtido %d)\n", seed_len);
+        fprintf(stderr, "[Handshake] private_key_hex: %s (len=%zu)\n", egi->wallet.private_key_hex, strlen(egi->wallet.private_key_hex));
         return EVERGRAM_ERR_CRYPTO;
     }
     
+    /* Reconstruir o par de chaves completo a partir da seed */
+    unsigned char pk[32], sk[64];
+    if (crypto_sign_seed_keypair(pk, sk, seed_bytes) != 0) {
+        fprintf(stderr, "[Handshake] Erro ao reconstruir chaves Ed25519\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    
+    /* Agora sk contém a secret key completa (64 bytes) necessária para crypto_sign_detached */
+    
     /* Assinar o challenge */
     uint8_t signature[64];
-    if (sign_challenge(secret_key_bytes, egi->wallet.address, egi->device.device_id,
+    if (sign_challenge(sk, egi->wallet.address, egi->device.device_id,
                        egi->auth_challenge_nonce, egi->auth_challenge_nonce_len, signature) != 0) {
         return EVERGRAM_ERR_CRYPTO;
     }
