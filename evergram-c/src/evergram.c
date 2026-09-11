@@ -184,8 +184,8 @@ int evergram_send(evergram_t *eg, const char *chat_id, const char *content) {
     envelope.type = "SEND";
     envelope.chat_id = (char*)chat_id;
     envelope.sender = (char*)eg->wallet.address;
-    envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_SEND;
-    envelope.content.send = &send_content;
+    envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_SEND;;
+    envelope.content.send = &send_content
     
     size_t env_size = evergram__envelope__get_packed_size(&envelope);
     uint8_t *env_data = malloc(env_size);
@@ -254,8 +254,8 @@ int evergram_react(evergram_t *eg, const char *chat_id, const char *message_id, 
     envelope.type = "REACT";
     envelope.chat_id = (char*)chat_id;
     envelope.sender = (char*)eg->wallet.address;
-    envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_REACT;
-    envelope.react = &react_content;
+    envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_REACT;;
+    envelope.react = &react_content
     
     size_t env_size = evergram__envelope__get_packed_size(&envelope);
     uint8_t *env_data = malloc(env_size);

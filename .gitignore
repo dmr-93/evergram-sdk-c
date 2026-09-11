@@ -1,18 +1,12 @@
 ```
-# Build artifacts
+# Compiled and build artifacts
 *.o
 *.obj
 *.a
 *.so
-*.dylib
 *.dll
 *.exe
 *.out
-
-# Generated files
-evergram-c/include/evergram.pb-c.h
-evergram-c/include/protobuf_generated.h
-evergram-c/src/evergram.pb-c.c
 
 # Dependencies
 node_modules/
@@ -24,27 +18,28 @@ __pycache__/
 target/
 .gradle/
 
-# Editor/IDE files
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
 
-# System files
-.DS_Store
-Thumbs.db
+# Environment
 .env
 .env.local
 *.env.*
-
-# Logs
-*.log
 
 # Coverage
 coverage/
 htmlcov/
 .coverage
+
+# System files
+.DS_Store
+Thumbs.db
 
 # Compressed files
 *.zip
