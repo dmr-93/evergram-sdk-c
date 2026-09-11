@@ -1,0 +1,656 @@
+#include "evergram.h"
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdarg.h>
+
+// ============================================================================
+// Estruturas Internas
+// ============================================================================
+
+struct evergram {
+    // Configuração
+    evergram_options_t options;
+    
+    // Estado da conexão
+    int connected;
+    int authenticating;
+    char nonce[EVERGRAM_MAX_NONCE_LEN];  // Nonce atual para auth
+    
+    // Callbacks
+    evergram_message_callback on_msg;
+    evergram_reaction_callback on_reaction;
+    evergram_typing_callback on_typing;
+    evergram_error_callback on_error;
+    evergram_connected_callback on_connected;
+    evergram_disconnected_callback on_disconnected;
+    evergram_chat_synced_callback on_chat_synced;
+    
+    // Transporte (implementação específica)
+    void* transport;
+    
+    // Chats conhecidos (para cache de chaves simétricas)
+    struct chat_cache* chats;
+    int chat_count;
+    
+    // Dados do usuário
+    void* user_data;
+};
+
+// ============================================================================
+// Implementação das Funções Utilitárias
+// ============================================================================
+
+const char* evergram_strerror(evergram_error_t error) {
+    switch (error) {
+        case EVERGRAM_SUCCESS: return "Success";
+        case EVERGRAM_ERR_INVALID_PARAM: return "Invalid parameter";
+        case EVERGRAM_ERR_MEMORY: return "Memory allocation failed";
+        case EVERGRAM_ERR_CRYPTO: return "Cryptographic operation failed";
+        case EVERGRAM_ERR_NETWORK: return "Network error";
+        case EVERGRAM_ERR_AUTH: return "Authentication failed";
+        case EVERGRAM_ERR_TIMEOUT: return "Operation timed out";
+        case EVERGRAM_ERR_PROTO: return "Protocol error";
+        case EVERGRAM_ERR_NOT_CONNECTED: return "Not connected";
+        case EVERGRAM_ERR_RATE_LIMITED: return "Rate limited";
+        case EVERGRAM_ERR_ACCESS_DENIED: return "Access denied";
+        case EVERGRAM_ERR_NOT_FOUND: return "Not found";
+        case EVERGRAM_ERR_ROTATION_REQUIRED: return "Key rotation required";
+        case EVERGRAM_ERR_DEVICE_REVOKED: return "Device revoked";
+        case EVERGRAM_ERR_INSUFFICIENT_BALANCE: return "Insufficient balance";
+        default: return "Unknown error";
+    }
+}
+
+const char* evergram_version(void) {
+    return "0.1.0";
+}
+
+void evergram_set_user_data(evergram_t* eg, void* user_data) {
+    if (!eg) return;
+    eg->user_data = user_data;
+}
+
+void* evergram_get_user_data(evergram_t* eg) {
+    if (!eg) return NULL;
+    return eg->user_data;
+}
+
+// ============================================================================
+// Funções Criptográficas (Stub - implementação real requer libsodium)
+// ============================================================================
+
+int evergram_hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
+    if (!hex || !out || out_len == 0) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    size_t hex_len = strlen(hex);
+    if (hex_len % 2 != 0) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    size_t bytes_needed = hex_len / 2;
+    if (bytes_needed > out_len) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    for (size_t i = 0; i < bytes_needed; i++) {
+        unsigned int byte;
+        char byte_str[3] = {hex[i*2], hex[i*2+1], 0};
+        if (sscanf(byte_str, "%02x", &byte) != 1) {
+            return EVERGRAM_ERR_INVALID_PARAM;
+        }
+        out[i] = (uint8_t)byte;
+    }
+    
+    return (int)bytes_needed;
+}
+
+int evergram_bytes_to_hex(const uint8_t* bytes, size_t len, char* out, size_t out_len) {
+    if (!bytes || !out || out_len < len * 2 + 1) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    for (size_t i = 0; i < len; i++) {
+        sprintf(out + i * 2, "%02x", bytes[i]);
+    }
+    out[len * 2] = '\0';
+    
+    return EVERGRAM_SUCCESS;
+}
+
+// ============================================================================
+// Gerenciamento de Carteira e Dispositivo (Stubs)
+// ============================================================================
+
+int evergram_generate_wallet(evergram_wallet_t* wallet) {
+    if (!wallet) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    // NOTA: Implementação real requer biblioteca ripple-keypairs ou equivalente
+    // Este é um stub que deve ser substituído por chamadas reais à API XRPL
+    
+    fprintf(stderr, "AVISO: evergram_generate_wallet() é um stub.\n");
+    fprintf(stderr, "Implementação real requer integração com ripple-keypairs.\n");
+    
+    memset(wallet, 0, sizeof(*wallet));
+    strcpy(wallet->seed, "stub_seed_placeholder");
+    strcpy(wallet->address, "rStubAddressPlaceholder");
+    strcpy(wallet->public_key_hex, "stub_pubkey_hex");
+    strcpy(wallet->private_key_hex, "stub_privkey_hex");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_wallet_from_seed(evergram_wallet_t* wallet, const char* seed) {
+    if (!wallet || !seed) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    // NOTA: Implementação real requer derivar chaves a partir do seed
+    fprintf(stderr, "AVISO: evergram_wallet_from_seed() é um stub.\n");
+    
+    memset(wallet, 0, sizeof(*wallet));
+    strncpy(wallet->seed, seed, sizeof(wallet->seed) - 1);
+    strcpy(wallet->address, "rStubAddressFromSeed");
+    strcpy(wallet->public_key_hex, "stub_pubkey_hex");
+    strcpy(wallet->private_key_hex, "stub_privkey_hex");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_generate_device(evergram_device_t* device) {
+    if (!device) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    // NOTA: Implementação real requer libsodium para gerar par de chaves X25519
+    fprintf(stderr, "AVISO: evergram_generate_device() é um stub.\n");
+    fprintf(stderr, "Implementação real requer crypto_box_keypair() do libsodium.\n");
+    
+    memset(device, 0, sizeof(*device));
+    strcpy(device->pub_hex, "stub_device_pub_hex");
+    strcpy(device->priv_hex, "stub_device_priv_hex");
+    strcpy(device->device_id, "stub_device_id");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_derive_device_id(const char* device_pub_hex, char* device_id_out) {
+    if (!device_pub_hex || !device_id_out) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    // NOTA: Implementação real requer SHA-256 e truncamento para 32 chars hex
+    // (sha256(devicePubHex).slice(0, 32))
+    fprintf(stderr, "AVISO: evergram_derive_device_id() é um stub.\n");
+    
+    strcpy(device_id_out, "stub_derived_device_id");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+// ============================================================================
+// Criação e Destruição da Instância
+// ============================================================================
+
+evergram_t* evergram_create(const evergram_options_t* options) {
+    if (!options || !options->url || !options->wallet || !options->device) {
+        return NULL;
+    }
+    
+    evergram_t* eg = (evergram_t*)calloc(1, sizeof(evergram_t));
+    if (!eg) {
+        return NULL;
+    }
+    
+    // Copiar opções
+    eg->options.url = strdup(options->url);
+    eg->options.wallet = options->wallet;
+    eg->options.device = options->device;
+    eg->options.name = options->name ? strdup(options->name) : NULL;
+    eg->options.platform = options->platform ? strdup(options->platform) : NULL;
+    eg->options.max_participants = options->max_participants > 0 ? 
+                                    options->max_participants : 250;
+    eg->options.request_timeout_ms = options->request_timeout_ms > 0 ? 
+                                      options->request_timeout_ms : 30000;
+    eg->options.auto_reconnect = options->auto_reconnect;
+    eg->options.user_data = options->user_data;
+    
+    // Inicializar estado
+    eg->connected = 0;
+    eg->authenticating = 0;
+    eg->transport = NULL;
+    eg->chats = NULL;
+    eg->chat_count = 0;
+    eg->user_data = options->user_data;
+    
+    // NOTA: Aqui inicializaria o transporte WebSocket
+    // eg->transport = transport_create(options->url);
+    // if (!eg->transport) {
+    //     evergram_destroy(eg);
+    //     return NULL;
+    // }
+    
+    return eg;
+}
+
+void evergram_destroy(evergram_t* eg) {
+    if (!eg) return;
+    
+    // Liberar strings alocadas
+    free((char*)eg->options.url);
+    free((char*)eg->options.name);
+    free((char*)eg->options.platform);
+    
+    // Limpar transporte
+    // if (eg->transport) {
+    //     transport_destroy(eg->transport);
+    // }
+    
+    // Limpar cache de chats
+    // ... (implementação dependente da estrutura chat_cache)
+    
+    free(eg);
+}
+
+// ============================================================================
+// Controle de Conexão (Stubs)
+// ============================================================================
+
+int evergram_start(evergram_t* eg) {
+    if (!eg) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->options.url) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_start() é um stub.\n");
+    fprintf(stderr, "Implementação real requer:\n");
+    fprintf(stderr, "  1. Conectar WebSocket para %s\n", eg->options.url);
+    fprintf(stderr, "  2. Aguardar auth_challenge do gateway\n");
+    fprintf(stderr, "  3. Assinar desafio com wallet\n");
+    fprintf(stderr, "  4. Enviar mensagem Auth com prova\n");
+    fprintf(stderr, "  5. Lidar com device_not_registered se necessário\n");
+    fprintf(stderr, "  6. Sincronizar chats existentes\n");
+    
+    // Simular sucesso para compilação
+    eg->connected = 1;
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_poll(evergram_t* eg, int timeout_ms) {
+    (void)timeout_ms;  // Stub não usa timeout
+    
+    if (!eg) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    // NOTA: Implementação real faria:
+    // 1. Poll do WebSocket (lws_service ou similar)
+    // 2. Processar mensagens recebidas
+    // 3. Descriptografar mensagens E2EE
+    // 4. Disparar callbacks apropriados
+    // 5. Lidar com reconnect se necessário
+    
+    // Stub: apenas espera
+    // Em produção: usar select/poll/epoll com timeout
+    
+    return EVERGRAM_SUCCESS;
+}
+
+bool evergram_is_connected(evergram_t* eg) {
+    return eg && eg->connected;
+}
+
+// ============================================================================
+// Registro de Callbacks
+// ============================================================================
+
+void evergram_on_message(evergram_t* eg, evergram_message_callback cb) {
+    if (!eg) return;
+    eg->on_msg = cb;
+}
+
+void evergram_on_reaction(evergram_t* eg, evergram_reaction_callback cb) {
+    if (!eg) return;
+    eg->on_reaction = cb;
+}
+
+void evergram_on_typing(evergram_t* eg, evergram_typing_callback cb) {
+    if (!eg) return;
+    eg->on_typing = cb;
+}
+
+void evergram_on_error(evergram_t* eg, evergram_error_callback cb) {
+    if (!eg) return;
+    eg->on_error = cb;
+}
+
+void evergram_on_connected(evergram_t* eg, evergram_connected_callback cb) {
+    if (!eg) return;
+    eg->on_connected = cb;
+}
+
+void evergram_on_disconnected(evergram_t* eg, evergram_disconnected_callback cb) {
+    if (!eg) return;
+    eg->on_disconnected = cb;
+}
+
+void evergram_on_chat_synced(evergram_t* eg, evergram_chat_synced_callback cb) {
+    if (!eg) return;
+    eg->on_chat_synced = cb;
+}
+
+// ============================================================================
+// Envio de Mensagens (Stubs)
+// ============================================================================
+
+int evergram_send(evergram_t* eg, const char* chat_id, const char* text) {
+    if (!eg || !chat_id || !text) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_send() é um stub.\n");
+    fprintf(stderr, "Implementação real requer:\n");
+    fprintf(stderr, "  1. Obter chave simétrica do chat\n");
+    fprintf(stderr, "  2. Criptografar texto com nacl.secretbox\n");
+    fprintf(stderr, "  3. Construir envelope protobuf\n");
+    fprintf(stderr, "  4. Enviar via WebSocket\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_sendf(evergram_t* eg, const char* chat_id, const char* format, ...) {
+    if (!eg || !chat_id || !format) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    char buffer[EVERGRAM_MAX_MESSAGE_LEN];
+    va_list args;
+    va_start(args, format);
+    int ret = vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    
+    if (ret < 0 || ret >= (int)sizeof(buffer)) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    return evergram_send(eg, chat_id, buffer);
+}
+
+int evergram_reply(evergram_t* eg, const evergram_message_t* reply_to, 
+                   const char* format, ...) {
+    if (!eg || !reply_to || !format) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    char buffer[EVERGRAM_MAX_MESSAGE_LEN];
+    va_list args;
+    va_start(args, format);
+    int ret = vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    
+    if (ret < 0 || ret >= (int)sizeof(buffer)) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    // NOTA: Implementação real precisaria setar reply_to_msg_id no envelope
+    fprintf(stderr, "AVISO: evergram_reply() é um stub.\n");
+    
+    return evergram_send(eg, reply_to->chat_id, buffer);
+}
+
+int evergram_send_typing(evergram_t* eg, const char* chat_id) {
+    if (!eg || !chat_id) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_send_typing() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_send_reaction(evergram_t* eg, const char* chat_id, 
+                           const char* msg_id, const char* emoji) {
+    if (!eg || !chat_id || !msg_id || !emoji) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_send_reaction() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_remove_reaction(evergram_t* eg, const char* chat_id, const char* msg_id) {
+    if (!eg || !chat_id || !msg_id) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_remove_reaction() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_edit_message(evergram_t* eg, const char* chat_id, 
+                          const char* msg_id, const char* new_text) {
+    if (!eg || !chat_id || !msg_id || !new_text) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_edit_message() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_delete_message(evergram_t* eg, const char* chat_id, const char* msg_id) {
+    if (!eg || !chat_id || !msg_id) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_delete_message() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+// ============================================================================
+// Gerenciamento de Chats (Stubs)
+// ============================================================================
+
+int evergram_create_chat(evergram_t* eg, const char* identity_key, char* chat_id_out) {
+    if (!eg || !identity_key) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_create_chat() é um stub.\n");
+    
+    if (chat_id_out) {
+        strcpy(chat_id_out, "stub_chat_id");
+    }
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_create_group(evergram_t* eg, const char* name,
+                          const char** participant_keys, int participant_count,
+                          char* chat_id_out) {
+    if (!eg || !name || !participant_keys || participant_count <= 0) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_create_group() é um stub.\n");
+    
+    if (chat_id_out) {
+        strcpy(chat_id_out, "stub_group_id");
+    }
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_add_participant(evergram_t* eg, const char* chat_id, 
+                             const char* identity_key) {
+    if (!eg || !chat_id || !identity_key) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_add_participant() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_remove_participant(evergram_t* eg, const char* chat_id, 
+                                const char* identity_key) {
+    if (!eg || !chat_id || !identity_key) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_remove_participant() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_leave_chat(evergram_t* eg, const char* chat_id) {
+    if (!eg || !chat_id) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_leave_chat() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_rotate_chat_version(evergram_t* eg, const char* chat_id) {
+    if (!eg || !chat_id) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_rotate_chat_version() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+// ============================================================================
+// Consultas e Informações (Stubs)
+// ============================================================================
+
+int evergram_get_profile(evergram_t* eg, const char* identity_key, 
+                         evergram_profile_t* profile_out) {
+    if (!eg || !identity_key || !profile_out) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_get_profile() é um stub.\n");
+    
+    strncpy(profile_out->identity_key, identity_key, 
+            sizeof(profile_out->identity_key) - 1);
+    strcpy(profile_out->name, "Stub User");
+    strcpy(profile_out->bio, "Stub bio");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_set_profile(evergram_t* eg, const char* name, const char* bio) {
+    (void)name;  // Stub não usa parâmetros
+    (void)bio;
+    
+    if (!eg) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_set_profile() é um stub.\n");
+    
+    return EVERGRAM_SUCCESS;
+}
+
+int evergram_list_chats(evergram_t* eg, evergram_chat_info_t** chats_out, int max_chats) {
+    if (!eg || !chats_out || max_chats <= 0) {
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    if (!eg->connected) {
+        return EVERGRAM_ERR_NOT_CONNECTED;
+    }
+    
+    fprintf(stderr, "AVISO: evergram_list_chats() é um stub.\n");
+    
+    // Retorna 0 chats no stub
+    return 0;
+}
+
+void evergram_free_chat_info(evergram_chat_info_t* chat) {
+    if (!chat) return;
+    
+    // Liberar array de participantes se alocado
+    if (chat->participants) {
+        for (int i = 0; i < chat->participant_count; i++) {
+            free(chat->participants[i]);
+        }
+        free(chat->participants);
+    }
+}
