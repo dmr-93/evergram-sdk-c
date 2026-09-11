@@ -104,13 +104,34 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
         printf("[Parser] AuthChallenge recebido\n");
         
         Evergram__AuthChallenge *chal = server_msg->auth_challenge;
-        if (chal->nonce && strlen(chal->nonce) <= sizeof(eg->auth_challenge_nonce)) {
-            memcpy(eg->auth_challenge_nonce, chal->nonce, strlen(chal->nonce));
-            eg->auth_challenge_nonce_len = strlen(chal->nonce);
-            eg->auth_challenge_received = true;
+        if (chal->nonce) {
+            size_t nonce_len = strlen(chal->nonce);
+            printf("[Parser] Nonce length: %zu bytes\n", nonce_len);
+            printf("[Parser] Nonce hex: ");
+            for (size_t i = 0; i < nonce_len && i < 32; i++) {
+                printf("%02x ", (unsigned char)chal->nonce[i]);
+            }
+            printf("\n");
             
-            /* Enviar resposta Auth */
-            send_auth_response(eg);
+            if (nonce_len <= sizeof(eg->auth_challenge_nonce)) {
+                memcpy(eg->auth_challenge_nonce, chal->nonce, nonce_len);
+                eg->auth_challenge_nonce_len = nonce_len;
+                eg->auth_challenge_received = true;
+                
+                printf("[Handshake] Wallet address: %s\n", eg->wallet.address);
+                printf("[Handshake] Device ID: %s\n", eg->device.device_id);
+                printf("[Handshake] Private key hex length: %zu\n", strlen(eg->wallet.private_key_hex));
+                
+                /* Enviar resposta Auth */
+                int ret = send_auth_response(eg);
+                if (ret != EVERGRAM_SUCCESS) {
+                    fprintf(stderr, "[Parser] Erro ao enviar AuthResponse: %d\n", ret);
+                }
+            } else {
+                fprintf(stderr, "[Parser] Nonce muito grande: %zu bytes (max %zu)\n", nonce_len, sizeof(eg->auth_challenge_nonce));
+            }
+        } else {
+            fprintf(stderr, "[Parser] AuthChallenge sem nonce\n");
         }
     }
     /* Verificar se e AuthResponse */
