@@ -10,7 +10,7 @@ LDFLAGS = -shared
 # LIBS = -lsodium -lwebsockets -lprotobuf-c -lcurl
 
 # Modo produção (com todas as dependências)
-LIBS = -lsodium -lwebsockets -lprotobuf-c
+LIBS = -lsodium -lwebsockets -lprotobuf-c -lssl -lcrypto
 
 # Debug flags
 ifdef DEBUG
