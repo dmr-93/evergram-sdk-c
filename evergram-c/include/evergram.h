@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 // Include do header gerado pelo protobuf-c (schema real da Evergram)
-#include "evergram_clean.pb-c.h"
+#include "evergram.pb-c.h"
 
 // ============================================================================
 // Constantes e Limites
