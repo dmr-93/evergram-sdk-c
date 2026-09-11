@@ -77,6 +77,17 @@ typedef enum {
     EVERGRAM_STATE_CONNECTED,
     EVERGRAM_STATE_AUTHENTICATING,
     EVERGRAM_STATE_ERROR
+
+typedef enum {
+    EVERGRAM_HS_DISCONNECTED = 0,
+    EVERGRAM_HS_CONNECTING,
+    EVERGRAM_HS_CLIENT_HELLO_SENT,
+    EVERGRAM_HS_SERVER_HELLO_RECEIVED,
+    EVERGRAM_HS_KEYS_DERIVED,
+    EVERGRAM_HS_AUTHENTICATED,
+    EVERGRAM_HS_CONNECTED,
+    EVERGRAM_HS_ERROR
+} evergram_hs_state_t;
 } evergram_state_t;
 
 // Carteira XRPL
@@ -310,6 +321,22 @@ int evergram_start(evergram_t* eg);
  * @return EVERGRAM_SUCCESS ou erro
  */
 int evergram_poll(evergram_t* eg, int timeout_ms);
+
+/**
+ * Processa dados de handshake recebidos (uso interno).
+ * @param eg Instância do Evergram
+ * @param data Dados brutos recebidos
+ * @param size Tamanho dos dados
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+int evergram_process_handshake_data(evergram_t* eg, const uint8_t* data, size_t size);
+
+/**
+ * Inicia o protocolo de handshake (uso interno).
+ * @param eg Instância do Evergram
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+int evergram_start_handshake(evergram_t* eg);
 
 /**
  * Verifica se está conectado.

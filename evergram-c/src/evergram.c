@@ -21,6 +21,7 @@ struct evergram {
     
     // Estado da conexão
     evergram_state_t state;
+    evergram_hs_state_t hs_state;  // Handshake state machine
     char nonce[EVERGRAM_MAX_NONCE_LEN];  // Nonce atual para auth
     
     // Callbacks
@@ -34,6 +35,26 @@ struct evergram {
     
     // Transporte WebSocket
     ws_transport_t* transport;
+    
+    // Handshake data
+    struct {
+        unsigned char ephemeral_pubkey[crypto_box_PUBLICKEYBYTES];
+        unsigned char ephemeral_privkey[crypto_box_SECRETKEYBYTES];
+        unsigned char server_ephemeral_pubkey[crypto_box_PUBLICKEYBYTES];
+        unsigned char client_nonce[24];
+        unsigned char server_nonce[24];
+        time_t started_at;
+    } handshake;
+    
+    // Session keys (after handshake)
+    struct {
+        unsigned char send_key[32];
+        unsigned char recv_key[32];
+        unsigned char send_nonce[24];
+        unsigned char recv_nonce[24];
+        uint64_t send_nonce_counter;
+        uint64_t recv_nonce_counter;
+    } session;
     
     // Chats conhecidos (para cache de chaves simétricas)
     struct chat_cache* chats;
@@ -285,28 +306,20 @@ static void on_ws_connected(void* user_data) {
     
     fprintf(stderr, "[Evergram] WebSocket conectado, iniciando handshake...\n");
     
-    // Gerar nonce para auth
-    uint8_t nonce_bytes[24];
-    randombytes_buf(nonce_bytes, sizeof(nonce_bytes));
-    evergram_bytes_to_hex(nonce_bytes, sizeof(nonce_bytes), eg->nonce, sizeof(eg->nonce));
-    
-    // TODO: Construir e enviar mensagem de handshake/auth
-    // Formato esperado pelo servidor Evergram:
-    // {
-    //   "type": "handshake",
-    //   "nonce": "<nonce_hex>",
-    //   "wallet": "<wallet_address>",
-    //   "device_id": "<device_id>",
-    //   "signature": "<assinatura>"
-    // }
-    
-    // Por enquanto, apenas notificar conexão estabelecida
-    eg->state = EVERGRAM_STATE_CONNECTED;
-    fprintf(stderr, "[Evergram] Handshake completado (stub)\n");
-    
-    if (eg->on_connected) {
-        eg->on_connected(eg);
+    // Iniciar o protocolo de handshake ClientHello/ServerHello
+    int ret = evergram_start_handshake(eg);
+    if (ret != EVERGRAM_SUCCESS) {
+        fprintf(stderr, "[Evergram] Falha ao iniciar handshake: %s\n", evergram_strerror(ret));
+        eg->state = EVERGRAM_STATE_ERROR;
+        
+        if (eg->on_error) {
+            eg->on_error(eg, ret, "Handshake initialization failed");
+        }
+        return;
     }
+    
+    // O estado será atualizado para EVERGRAM_STATE_CONNECTED
+    // quando o ServerHello for recebido e processado em evergram_process_handshake_data
 }
 
 // Callback interno chamado quando WebSocket desconecta
@@ -401,8 +414,8 @@ int evergram_start(evergram_t* eg) {
         return ret;
     }
     
-    // NOTA: A conexão é assíncrona. O estado EVERGRAM_STATE_CONNECTED
-    // será setado no callback LWS_CALLBACK_ESTABLISHED -> on_ws_connected
+    // NOTA: A conexão WebSocket é assíncrona. O callback on_ws_connected
+    // será chamado quando a conexão for estabelecida, e lá iniciaremos o handshake.
     // O usuário deve chamar evergram_poll() para processar eventos.
     
     return EVERGRAM_SUCCESS;
