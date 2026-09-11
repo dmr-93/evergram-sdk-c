@@ -275,15 +275,15 @@ int evergram_typing(evergram_t *eg, const char *chat_id, bool is_typing) {
     
     // Criar TypingContent
     Evergram__TypingContent typing_content = EVERGRAM__TYPING_CONTENT__INIT;
-    typing_content.has_is_typing = 1;
-    typing_content.is_typing = is_typing;
+    typing_content.is_typing = is_typing ? 1 : 0;
     
     // Criar Envelope
     Evergram__Envelope envelope = EVERGRAM__ENVELOPE__INIT;
+    envelope.type = "TYPING";
     envelope.chat_id = (char*)chat_id;
     envelope.sender = (char*)eg->wallet.address;
     envelope.content_case = EVERGRAM__ENVELOPE__CONTENT_TYPING;
-    envelope.content.typing = &typing_content;
+    envelope.typing = &typing_content;
     
     size_t env_size = evergram__envelope__get_packed_size(&envelope);
     uint8_t *env_data = malloc(env_size);
