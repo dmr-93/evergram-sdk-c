@@ -11,7 +11,7 @@
 #include "evergram.pb-c.h"
 #include "transport.h"
 
-/* Definicao completa da estrutura interna (deve ser consistente com evergram.c) */
+/* Definicao completa da estrutura interna */
 struct evergram {
     char *server_url;
     evergram_wallet_t wallet;
@@ -99,7 +99,7 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
         
         if (server_msg) {
             /* Verificar se e AuthChallenge */
-            if (server_msg->auth_challenge) {
+            if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_AUTH_CHALLENGE && server_msg->auth_challenge) {
                 printf("[Parser] AuthChallenge recebido\n");
                 
                 Evergram__AuthChallenge *chal = server_msg->auth_challenge;
@@ -113,7 +113,7 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
                 }
             }
             /* Verificar se e AuthResponse */
-            else if (server_msg->auth_response) {
+            else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_AUTH_RESPONSE && server_msg->auth_response) {
                 printf("[Parser] AuthResponse recebido\n");
                 
                 Evergram__AuthResponse *auth_resp = server_msg->auth_response;
@@ -131,7 +131,6 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
                     /* Device nao registrado - registrar e tentar novamente */
                     printf("[Parser] Device nao registrado, registrando...\n");
                     send_register_device(eg);
-                    /* Re-autenticar apos registro */
                     send_auth_response(eg);
                 } else {
                     fprintf(stderr, "[Parser] Falha na autenticacao: %s\n", 
@@ -140,6 +139,46 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
                     if (eg->on_error) {
                         eg->on_error(eg, EVERGRAM_ERR_AUTH, "Authentication failed");
                     }
+                }
+            }
+            /* Verificar se e Envelope (mensagem de chat recebida) */
+            else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ENVELOPE && server_msg->envelope) {
+                printf("[Parser] Envelope recebido\n");
+                
+                Evergram__Envelope *env = server_msg->envelope;
+                if (env && env->chat_id && env->sender && env->send) {
+                    evergram_message_t msg;
+                    memset(&msg, 0, sizeof(msg));
+                    
+                    strncpy(msg.chat_id, env->chat_id, sizeof(msg.chat_id) - 1);
+                    strncpy(msg.sender, env->sender, sizeof(msg.sender) - 1);
+                    
+                    if (env->send->msg_id) {
+                        strncpy(msg.msg_id, env->send->msg_id, sizeof(msg.msg_id) - 1);
+                    }
+                    
+                    msg.timestamp = evergram_get_timestamp_ms();
+                    
+                    if (env->send->ciphertext) {
+                        msg.text = env->send->ciphertext;
+                    }
+                    
+                    if (env->send->reply_to_msg_id) {
+                        msg.reply_to_msg_id = (char*)env->send->reply_to_msg_id;
+                    }
+                    
+                    if (eg->on_message) {
+                        eg->on_message(eg, &msg);
+                    }
+                }
+            }
+            /* Verificar se e Error */
+            else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ERROR && server_msg->error) {
+                fprintf(stderr, "[Parser] ErrorResponse recebido\n");
+                
+                Evergram__Error *err = server_msg->error;
+                if (err && err->message && eg->on_error) {
+                    eg->on_error(eg, EVERGRAM_ERR_PROTO, err->message);
                 }
             }
             
