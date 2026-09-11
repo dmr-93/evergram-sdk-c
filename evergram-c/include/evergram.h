@@ -23,7 +23,11 @@ extern "C" {
 #define EVERGRAM_MAX_CHAT_ID_LEN      128
 #define EVERGRAM_MAX_IDENTITY_KEY_LEN 128
 #define EVERGRAM_MAX_NAME_LEN         128
-#define EVERGRAM_MAX_NONCE_LEN        64
+#define EVERGRAM_MAX_NONCE_LEN        24
+#define EVERGRAM_DEVICE_KEY_LEN       32
+#define EVERGRAM_DEVICE_ID_LEN        16
+#define EVERGRAM_SIGNATURE_LEN        64
+#define EVERGRAM_MAC_BYTES            16
 
 // ============================================================================
 // Códigos de Erro
@@ -45,6 +49,7 @@ typedef enum {
     EVERGRAM_ERR_ROTATION_REQUIRED = -12,
     EVERGRAM_ERR_DEVICE_REVOKED = -13,
     EVERGRAM_ERR_INSUFFICIENT_BALANCE = -14,
+    EVERGRAM_ERR_BUFFER_TOO_SMALL = -15,
     EVERGRAM_ERR_UNKNOWN = -99
 } evergram_error_t;
 
@@ -196,6 +201,70 @@ int evergram_generate_device(evergram_device_t* device);
  * @return EVERGRAM_SUCCESS ou erro
  */
 int evergram_derive_device_id(const char* device_pub_hex, char* device_id_out);
+
+/**
+ * @brief Inicializa a biblioteca criptográfica (libsodium).
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+evergram_error_t evergram_crypto_init(void);
+
+/**
+ * @brief Gera um par de chaves para dispositivo.
+ * @param public_key Buffer para chave pública (tamanho: EVERGRAM_DEVICE_KEY_LEN)
+ * @param secret_key Buffer para chave secreta (tamanho: EVERGRAM_DEVICE_KEY_LEN)
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+evergram_error_t evergram_generate_device_keys(unsigned char *public_key, unsigned char *secret_key);
+
+/**
+ * @brief Gera um nonce aleatório seguro.
+ * @param nonce Buffer de saída (tamanho: EVERGRAM_MAX_NONCE_LEN)
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+evergram_error_t evergram_generate_nonce(unsigned char *nonce);
+
+/**
+ * @brief Criptografa uma mensagem usando crypto_secretbox.
+ */
+evergram_error_t evergram_encrypt_message(const unsigned char *plaintext, size_t plaintext_len,
+                                          const unsigned char *nonce, const unsigned char *shared_key,
+                                          unsigned char *ciphertext, size_t *ciphertext_len);
+
+/**
+ * @brief Descriptografa uma mensagem usando crypto_secretbox_open.
+ */
+evergram_error_t evergram_decrypt_message(const unsigned char *ciphertext, size_t ciphertext_len,
+                                          const unsigned char *nonce, const unsigned char *shared_key,
+                                          unsigned char *plaintext, size_t *plaintext_len);
+
+/**
+ * @brief Assina uma mensagem com a chave secreta do dispositivo.
+ */
+evergram_error_t evergram_sign_message(const unsigned char *message, size_t message_len,
+                                       const unsigned char *secret_key,
+                                       unsigned char *signature, size_t *signature_len);
+
+/**
+ * @brief Verifica a assinatura de uma mensagem.
+ */
+evergram_error_t evergram_verify_signature(const unsigned char *message, size_t message_len,
+                                           const unsigned char *signature, size_t signature_len,
+                                           const unsigned char *public_key);
+
+/**
+ * @brief Converte chave pública para formato hexadecimal.
+ */
+evergram_error_t evergram_key_to_hex(const unsigned char *key, char *hex_output);
+
+/**
+ * @brief Converte string hexadecimal para chave binária.
+ */
+evergram_error_t evergram_hex_to_key(const char *hex_input, unsigned char *key_output);
+
+/**
+ * @brief Gera um timestamp Unix em milissegundos.
+ */
+uint64_t evergram_get_timestamp_ms(void);
 
 /**
  * Converte string hex para bytes.

@@ -9,8 +9,8 @@ LDFLAGS = -shared
 # Para produção, descomente todas as dependências:
 # LIBS = -lsodium -lwebsockets -lprotobuf-c -lcurl
 
-# Modo stub (sem libsodium e protobuf-c, apenas libwebsockets para transporte)
-LIBS = -lwebsockets
+# Modo produção (com todas as dependências)
+LIBS = -lsodium -lwebsockets -lprotobuf-c
 
 # Debug flags
 ifdef DEBUG
