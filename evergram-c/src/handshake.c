@@ -49,6 +49,63 @@ struct evergram {
  * Constrói mensagem Auth usando protobuf real da Evergram
  * Envia via ClientMessage com payload_case = AUTH
  */
+static int build_auth_message(evergram_t *eg, uint8_t **out_data, size_t *out_len);
+
+/**
+ * Constrói mensagem ClientHello com chave efêmera
+ */
+static int build_client_hello(evergram_t *eg, uint8_t **out_data, size_t *out_len) {
+    if (!eg || !out_data || !out_len) return -1;
+    
+    Evergram__ClientMessage client_msg = EVERGRAM__CLIENT_MESSAGE__INIT;
+    
+    /* Gera request_id aleatório */
+    client_msg.has_request_id = 1;
+    client_msg.request_id = 1;
+    
+    /* Configura payload como auth */
+    client_msg.payload_case = EVERGRAM__CLIENT_MESSAGE__PAYLOAD_AUTH;
+    
+    /* Constrói Auth usando build_auth_message */
+    uint8_t *auth_data = NULL;
+    size_t auth_len = 0;
+    if (build_auth_message(eg, &auth_data, &auth_len) != 0) {
+        fprintf(stderr, "[handshake] Failed to build auth message\n");
+        return -1;
+    }
+    
+    /* Unpack Auth para usar no ClientMessage */
+    Evergram__Auth *auth = evergram__auth__unpack(NULL, auth_len, auth_data);
+    free(auth_data);
+    
+    if (!auth) {
+        fprintf(stderr, "[handshake] Failed to unpack auth\n");
+        return -1;
+    }
+    
+    client_msg.auth = auth;
+    
+    /* Serializa ClientMessage */
+    size_t len = evergram__client_message__get_packed_size(&client_msg);
+    uint8_t *data = malloc(len);
+    if (!data) {
+        evergram__auth__free_unpacked(auth, NULL);
+        return -1;
+    }
+    evergram__client_message__pack(&client_msg, data);
+    
+    evergram__auth__free_unpacked(auth, NULL);
+    
+    *out_data = data;
+    *out_len = len;
+    
+    return 0;
+}
+
+/**
+ * Constrói mensagem Auth usando protobuf real da Evergram
+ * Envia via ClientMessage com payload_case = AUTH
+ */
 static int build_auth_message(evergram_t *eg, uint8_t **out_data, size_t *out_len) {
     if (!eg || !out_data || !out_len) return -1;
     
@@ -90,24 +147,22 @@ static int build_auth_message(evergram_t *eg, uint8_t **out_data, size_t *out_le
         return -1;
     }
     
-    /* Configura proof como xrpl_signature */
-    proof.proof_case = EVERGRAM__AUTH_PROOF__PROOF_XRPL_SIGNATURE;
-    proof.xrpl_signature.len = 64;
-    proof.xrpl_signature.data = signature;
+    /* Configura proof como signed_message */
+    proof.proof_case = EVERGRAM__AUTH_PROOF__PROOF_SIGNED_MESSAGE;
+    
+    /* Converte assinatura para hex */
+    char signature_hex[129];
+    sodium_bin2hex(signature_hex, sizeof(signature_hex), signature, 64);
+    
+    Evergram__SignedMessageProof signed_proof = EVERGRAM__SIGNED_MESSAGE_PROOF__INIT;
+    signed_proof.signature_hex = signature_hex;
+    signed_proof.public_key_hex = eg->wallet.public_key_hex;
+    proof.signed_message = &signed_proof;
     
     /* Configura Device */
     Evergram__Device device_proto = EVERGRAM__DEVICE__INIT;
     device_proto.device_id = eg->device.device_id;
-    device_proto.public_key.len = 32;
-    
-    /* Converte device public key de hex para bin */
-    unsigned char device_pub_bin[32];
-    if (sodium_hex2bin(device_pub_bin, 32, eg->device.pub_hex,
-                       strlen(eg->device.pub_hex), NULL, NULL, NULL) != 0) {
-        fprintf(stderr, "[handshake] Failed to convert device public key from hex\\n");
-        return -1;
-    }
-    device_proto.public_key.data = device_pub_bin;
+    device_proto.device_pub_hex = eg->device.pub_hex;
     
     /* Monta Auth */
     auth.identity = &identity;
@@ -135,52 +190,74 @@ static int build_auth_message(evergram_t *eg, uint8_t **out_data, size_t *out_le
 }
 
 /**
- * Parse ServerHello e deriva chaves de sessão
+ * Parse ServerMessage - pode ser auth_challenge ou auth_response
  */
 static int parse_server_hello(evergram_t *eg, const uint8_t *data, size_t len) {
     if (!eg || !data) return -1;
     
-    Evergram__ServerHello *server_hello = 
-        evergram__server_hello__unpack(NULL, len, data);
-    if (!server_hello) {
-        fprintf(stderr, "[handshake] Failed to unpack ServerHello\n");
+    Evergram__ServerMessage *server_msg = 
+        evergram__server_message__unpack(NULL, len, data);
+    if (!server_msg) {
+        fprintf(stderr, "[handshake] Failed to unpack ServerMessage\n");
         return -1;
     }
     
-    if (!server_hello->success) {
-        fprintf(stderr, "[handshake] Server rejected: %s\n", 
-                server_hello->error_message ? server_hello->error_message : "unknown");
-        evergram__server_hello__free_unpacked(server_hello, NULL);
-        return -1;
+    /* Verifica se é um auth_challenge */
+    if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_AUTH_CHALLENGE) {
+        Evergram__AuthChallenge *challenge = server_msg->auth_challenge;
+        printf("[handshake] Received auth challenge with nonce: %s\n", 
+               challenge->nonce ? challenge->nonce : "null");
+        
+        /* Armazena o nonce para assinar na próxima mensagem */
+        if (challenge->nonce) {
+            strncpy(eg->session_id, challenge->nonce, sizeof(eg->session_id) - 1);
+        }
+        
+        evergram__server_message__free_unpacked(server_msg, NULL);
+        eg->hs_state = EVERGRAM_HS_CHALLENGE_RECEIVED;
+        return 1; /* Retorna 1 para indicar que precisa enviar resposta */
     }
     
-    /* Copia chave pública do servidor */
-    if (server_hello->server_public_key.len != 32) {
-        fprintf(stderr, "[handshake] Invalid server public key length\n");
-        evergram__server_hello__free_unpacked(server_hello, NULL);
-        return -1;
+    /* Verifica se é uma auth_response */
+    if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_AUTH_RESPONSE) {
+        Evergram__AuthResponse *auth_resp = server_msg->auth_response;
+        
+        /* Verifica status da resposta */
+        if (auth_resp->status && auth_resp->status->has_ok && !auth_resp->status->ok) {
+            fprintf(stderr, "[handshake] Server rejected: code=%s, message=%s\n", 
+                    auth_resp->status->code ? auth_resp->status->code : "unknown",
+                    auth_resp->status->message ? auth_resp->status->message : "unknown");
+            evergram__server_message__free_unpacked(server_msg, NULL);
+            return -1;
+        }
+        
+        /* Copia chave pública do servidor se disponível */
+        if (auth_resp->device && auth_resp->device->device_pub_hex) {
+            /* A chave pública do servidor vem no device */
+            unsigned char server_pub_bin[32];
+            if (sodium_hex2bin(server_pub_bin, 32, auth_resp->device->device_pub_hex,
+                               strlen(auth_resp->device->device_pub_hex), NULL, NULL, NULL) == 0) {
+                memcpy(eg->server_public, server_pub_bin, 32);
+                
+                /* Deriva chave de sessão usando ECDH */
+                unsigned char qstate[crypto_box_BEFORENMBYTES];
+                if (crypto_box_beforenm(qstate, eg->server_public, eg->ephemeral_secret) != 0) {
+                    fprintf(stderr, "[handshake] ECDH failed\n");
+                    evergram__server_message__free_unpacked(server_msg, NULL);
+                    return -1;
+                }
+                memcpy(eg->session_key, qstate, 32);
+                eg->session_keys_ready = true;
+            }
+        }
+        
+        evergram__server_message__free_unpacked(server_msg, NULL);
+        return 0;
     }
-    memcpy(eg->server_public, server_hello->server_public_key.data, 32);
     
-    /* Deriva chave de sessão usando ECDH */
-    unsigned char qstate[crypto_box_BEFORENMBYTES];
-    if (crypto_box_beforenm(qstate, eg->server_public, eg->ephemeral_secret) != 0) {
-        fprintf(stderr, "[handshake] ECDH failed\n");
-        evergram__server_hello__free_unpacked(server_hello, NULL);
-        return -1;
-    }
-    
-    /* Usa primeiros 32 bytes como chave de sessão */
-    memcpy(eg->session_key, qstate, 32);
-    eg->session_keys_ready = true;
-    
-    /* Copia session ID */
-    if (server_hello->session_id) {
-        strncpy(eg->session_id, server_hello->session_id, sizeof(eg->session_id) - 1);
-    }
-    
-    evergram__server_hello__free_unpacked(server_hello, NULL);
-    return 0;
+    fprintf(stderr, "[handshake] Unexpected payload_case %d\n", server_msg->payload_case);
+    evergram__server_message__free_unpacked(server_msg, NULL);
+    return -1;
 }
 
 int evergram_start_handshake(evergram_t *eg) {

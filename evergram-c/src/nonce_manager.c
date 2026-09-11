@@ -10,6 +10,8 @@ struct evergram_nonce_manager {
     uint8_t  received_window[64]; // Janela deslizante para detecção de replay (512 bits)
 };
 
+typedef struct evergram_nonce_manager evergram_nonce_manager_t;
+
 evergram_nonce_manager_t* evergram_nonce_create(void) {
     evergram_nonce_manager_t* mgr = malloc(sizeof(evergram_nonce_manager_t));
     if (!mgr) return NULL;
@@ -34,7 +36,7 @@ uint64_t evergram_nonce_get_next_local(evergram_nonce_manager_t* mgr) {
 
 // Verifica se o nonce remoto é válido (maior que o último ou dentro da janela de replay)
 int evergram_nonce_verify_remote(evergram_nonce_manager_t* mgr, uint64_t nonce) {
-    if (!mgr) return EVERGRAM_ERROR_INVALID_ARG;
+    if (!mgr) return EVERGRAM_ERR_INVALID_PARAM;
 
     // Se for maior que o último conhecido, é novo e válido
     if (nonce > mgr->remote_nonce) {
@@ -67,24 +69,24 @@ int evergram_nonce_verify_remote(evergram_nonce_manager_t* mgr, uint64_t nonce) 
     
     if (diff == 0) {
         // Nonce duplicado exato
-        return EVERGRAM_ERROR_REPLAY_ATTACK;
+        return EVERGRAM_ERR_AUTH;
     }
     
     if (diff > 512) {
         // Muito antigo, fora da janela
-        return EVERGRAM_ERROR_REPLAY_ATTACK;
+        return EVERGRAM_ERR_AUTH;
     }
 
     size_t byte_idx = (diff - 1) / 8;
     size_t bit_idx = (diff - 1) % 8;
 
     if (byte_idx >= sizeof(mgr->received_window)) {
-        return EVERGRAM_ERROR_REPLAY_ATTACK;
+        return EVERGRAM_ERR_AUTH;
     }
 
     if (mgr->received_window[byte_idx] & (1 << bit_idx)) {
         // Já foi recebido antes
-        return EVERGRAM_ERROR_REPLAY_ATTACK;
+        return EVERGRAM_ERR_AUTH;
     }
 
     // Marca como recebido
