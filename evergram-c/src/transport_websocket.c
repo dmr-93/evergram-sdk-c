@@ -109,8 +109,8 @@ ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
                 transport->recv_len += len;
                 transport->recv_buffer[transport->recv_len] = '\0';
                 
-                // Logar recebimento (parse real será implementado depois)
-                fprintf(stderr, "[WebSocket] Recebido %zu bytes\\n", len);
+                // Logar recebimento
+                fprintf(stderr, "[WebSocket] Recebido %zu bytes\n", len);
             }
             break;
 
@@ -132,13 +132,13 @@ ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
             break;
     }
 
-    return lws_callback_on_writable(wsi);
+    return 0;  // Remover callback_on_writable que causava loop infinito
 }
 
 // Protocolo libwebsockets
 static struct lws_protocols protocols[] = {
     {
-        .name = "evergram-protocol",
+        .name = "",  // Nome vazio para aceitar qualquer protocolo
         .callback = ws_callback,
         .per_session_data_size = 0,  // Não alocar dados por sessão aqui
         .rx_buffer_size = 0,  // Usar buffer padrão
@@ -241,7 +241,7 @@ int transport_connect(ws_transport_t* transport, const char* host, int port,
     ccinfo.host = host;
     ccinfo.origin = host;
     ccinfo.protocol = protocols[0].name;
-    ccinfo.ssl_connection = use_ssl ? 2 : 0;  // 2 = LCCSCF_USE_SSL
+    ccinfo.ssl_connection = use_ssl ? LCCSCF_USE_SSL : 0;
     ccinfo.userdata = transport;
 
     transport->wsi = lws_client_connect_via_info(&ccinfo);
@@ -251,6 +251,8 @@ int transport_connect(ws_transport_t* transport, const char* host, int port,
     }
 
     fprintf(stderr, "[WebSocket] Conectando a %s:%d%s...\n", host, port, path);
+    
+    /* Conexão é assíncrona - o estado será atualizado no callback LWS_CALLBACK_ESTABLISHED */
     return EVERGRAM_SUCCESS;
 }
 
