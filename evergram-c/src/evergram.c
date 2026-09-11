@@ -10,7 +10,7 @@
 #include <time.h>
 #include <stdarg.h>
 #include "evergram.h"
-#include "evergram.pb-c.h"
+#include "protobuf_generated.h"
 
 extern int evergram_init_parser(evergram_t *eg);
 extern void evergram_cleanup_parser(evergram_t *eg);
