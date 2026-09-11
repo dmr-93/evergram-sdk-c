@@ -5,22 +5,6 @@
 #include "evergram.h"
 #include "proto/evergram.pb-c.h"
 
-// Implementação de evergram_strerror
-const char* evergram_strerror(evergram_error_t err) {
-    switch ((int)err) {
-        case 0: return "Success";
-        case 1: return "Invalid parameter";
-        case 2: return "Out of memory";
-        case 3: return "Protocol error";
-        case 4: return "Cryptographic error";
-        case 5: return "Network error";
-        case 6: return "Authentication failed";
-        case 7: return "Not connected";
-        case 8: return "Operation timeout";
-        default: return "Unknown error";
-    }
-}
-
 // Função auxiliar para converter bytes para hex string
 static void bytes_to_hex(const unsigned char* bytes, size_t len, char* hex_out, size_t hex_out_size) {
     if (hex_out_size < len * 2 + 1) return;

@@ -1,88 +1,25 @@
 ```
-# Compiled and build artifacts
+# Compiled and binary files
+*.so
+*.a
 *.o
 *.obj
 *.out
-*.so
-*.dll
-*.exe
-*.class
-*.pyc
-__pycache__/
+bin/
 
 # Dependencies
-node_modules/
-venv/
-.venv/
+lib/
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Environment
 .env
 .env.local
 *.env.*
 
-# Build directories
-dist/
-build/
-target/
-*.tar*
-*.zip
-*.gz
-*.bz2
-*.xz
-*.7z
-*.rar
-
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
-
-# Logs
-*.log
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Python specific
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-.venv/
-venv/
-ENV/
-.venv.bak/
-venv.bak/
-
-# C/C++ specific
-*.o
-*.obj
-*.out
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-*.exe
-*.ilk
-*.pdb
-*.iobj
-*.ipdb
-*.tlog
-*.exp
-*.manifest
-*.res
-
-# Proto files intermediate
-*.pb.cc
-*.pb.h
-*_pb2.py
-
 ```
