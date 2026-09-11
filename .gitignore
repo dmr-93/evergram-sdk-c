@@ -6,18 +6,22 @@
 *.so
 *.exe
 *.dll
-*.out
+*.pyc
+__pycache__/
+
+# Build directories
 obj/
 lib/
+build/
+dist/
+target/
 
 # Dependencies
 node_modules/
-venv/
 .venv/
-__pycache__/
+venv/
 .mypy_cache/
 .pytest_cache/
-target/
 .gradle/
 
 # Logs and temp files
@@ -25,21 +29,16 @@ target/
 *.tmp
 *.swp
 
-# Environment
-.env
-.env.local
-.env.*
-
 # Editors
 .vscode/
 .idea/
 
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
-
 # System files
 .DS_Store
 Thumbs.db
+
+# Environment
+.env
+.env.local
+*.env.*
 ```
