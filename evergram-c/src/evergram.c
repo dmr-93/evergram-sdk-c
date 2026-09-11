@@ -280,3 +280,63 @@ void evergram_destroy(evergram_t *eg) {
     if (eg->server_url) free(eg->server_url);
     free(eg);
 }
+
+// Implementações faltantes das funções principais
+evergram_t* evergram_create(const evergram_options_t *options) {
+    if (!options || !options->url || !options->wallet || !options->device) {
+        return NULL;
+    }
+    
+    evergram_t *eg = calloc(1, sizeof(evergram_t));
+    if (!eg) return NULL;
+    
+    eg->server_url = strdup(options->url);
+    if (!eg->server_url) { free(eg); return NULL; }
+    
+    memcpy(&eg->wallet, options->wallet, sizeof(evergram_wallet_t));
+    memcpy(&eg->device, options->device, sizeof(evergram_device_t));
+    
+    eg->state = EVERGRAM_STATE_DISCONNECTED;
+    eg->hs_state = EVERGRAM_HS_DISCONNECTED;
+    eg->session_keys_ready = false;
+    eg->send_nonce = 0;
+    eg->recv_nonce = 0;
+    eg->user_data = options->user_data;
+    
+    // Alocar buffer de recebimento
+    eg->recv_buffer_size = 10 * 1024 * 1024;
+    eg->recv_buffer = malloc(eg->recv_buffer_size);
+    if (!eg->recv_buffer) {
+        free(eg->server_url);
+        free(eg);
+        return NULL;
+    }
+    eg->recv_buffer_len = 0;
+    
+    // Inicializar parser
+    evergram_init_parser(eg);
+    
+    return eg;
+}
+
+void evergram_on_message(evergram_t *eg, evergram_message_callback cb) {
+    if (eg) eg->on_message = cb;
+}
+void evergram_on_reaction(evergram_t *eg, evergram_reaction_callback cb) {
+    if (eg) eg->on_reaction = cb;
+}
+void evergram_on_typing(evergram_t *eg, evergram_typing_callback cb) {
+    if (eg) eg->on_typing = cb;
+}
+void evergram_on_error(evergram_t *eg, evergram_error_callback cb) {
+    if (eg) eg->on_error = cb;
+}
+void evergram_on_connected(evergram_t *eg, evergram_connected_callback cb) {
+    if (eg) eg->on_connected = cb;
+}
+void evergram_on_disconnected(evergram_t *eg, evergram_disconnected_callback cb) {
+    if (eg) eg->on_disconnected = cb;
+}
+void evergram_on_chat_synced(evergram_t *eg, evergram_chat_synced_callback cb) {
+    if (eg) eg->on_chat_synced = cb;
+}
