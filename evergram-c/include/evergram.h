@@ -12,8 +12,8 @@
 extern "C" {
 #endif
 
-// Include do header gerado pelo protobuf-c
-#include "protobuf_generated.h"
+// Include do header gerado pelo protobuf-c (schema real da Evergram)
+#include "evergram_clean.pb-c.h"
 
 // ============================================================================
 // Constantes e Limites
