@@ -1,5 +1,5 @@
 /**
- * evergram-c - Message Parser and Router (Corrigido)
+ * evergram-c - Message Parser and Router
  */
 
 #include <stdio.h>
@@ -9,32 +9,10 @@
 #include <stdbool.h>
 #include "evergram.h"
 #include "evergram.pb-c.h"
+#include "transport.h"
 
-/* Estrutura interna */
-struct evergram {
-    char *server_url;
-    evergram_wallet_t wallet;
-    evergram_device_t device;
-    void *ws_context;
-    evergram_state_t state;
-    evergram_hs_state_t hs_state;
-    unsigned char session_key[32];
-    bool session_keys_ready;
-    uint64_t send_nonce;
-    uint64_t recv_nonce;
-    uint8_t *recv_buffer;
-    size_t recv_buffer_size;
-    size_t recv_buffer_len;
-    time_t handshake_start_time;
-    evergram_message_callback on_message;
-    evergram_reaction_callback on_reaction;
-    evergram_typing_callback on_typing;
-    evergram_error_callback on_error;
-    evergram_connected_callback on_connected;
-    evergram_disconnected_callback on_disconnected;
-    evergram_chat_synced_callback on_chat_synced;
-    void *user_data;
-};
+/* Declaracao forward */
+extern int send_auth_response(evergram_t *eg);
 
 /**
  * Processa dados recebidos do transporte
@@ -61,8 +39,6 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
     int messages_processed = 0;
     
     while (eg->recv_buffer_len >= 5) {
-        uint8_t msg_type = eg->recv_buffer[0];
-        
         uint32_t payload_len = 
             ((uint32_t)eg->recv_buffer[1] << 24) |
             ((uint32_t)eg->recv_buffer[2] << 16) |
@@ -82,9 +58,49 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
 
         const uint8_t *payload = eg->recv_buffer + 5;
         
-        /* Aqui entraria o decrypt e parse protobuf */
-        /* Por enquanto apenas avisa que recebeu dados */
-        printf("[DEBUG] Received message type %u, len %u\n", msg_type, payload_len);
+        /* Deserializar mensagem protobuf */
+        Evergram__ServerMessage *server_msg = 
+            evergram__server_message__unpack(NULL, payload_len, payload);
+        
+        if (server_msg) {
+            /* Verificar se e AuthChallenge */
+            if (server_msg->auth_challenge) {
+                printf("[Parser] AuthChallenge recebido\n");
+                
+                Evergram__AuthChallenge *chal = server_msg->auth_challenge;
+                if (chal->nonce && strlen(chal->nonce) <= sizeof(eg->auth_challenge_nonce)) {
+                    memcpy(eg->auth_challenge_nonce, chal->nonce, strlen(chal->nonce));
+                    eg->auth_challenge_nonce_len = strlen(chal->nonce);
+                    
+                    /* Enviar resposta Auth */
+                    send_auth_response(eg);
+                }
+            }
+            /* Verificar se e AuthResponse */
+            else if (server_msg->auth_response) {
+                printf("[Parser] AuthResponse recebido\n");
+                
+                Evergram__AuthResponse *auth_resp = server_msg->auth_response;
+                if (auth_resp && auth_resp->status == EVERGRAM__RESPONSE_STATUS__SUCCESS) {
+                    eg->state = EVERGRAM_STATE_CONNECTED;
+                    eg->hs_state = EVERGRAM_HS_AUTHENTICATED;
+                    printf("[Parser] Autenticado com sucesso!\n");
+                    
+                    /* Chamar callback de conexao */
+                    if (eg->on_connected) {
+                        eg->on_connected(eg);
+                    }
+                } else {
+                    fprintf(stderr, "[Parser] Falha na autenticacao: %d\n", 
+                            auth_resp ? auth_resp->status : -1);
+                    if (eg->on_error) {
+                        eg->on_error(eg, EVERGRAM_ERR_AUTH, "Authentication failed");
+                    }
+                }
+            }
+            
+            evergram__server_message__free_unpacked(server_msg, NULL);
+        }
         
         messages_processed++;
 
