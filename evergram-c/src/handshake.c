@@ -118,8 +118,8 @@ static int sign_challenge(const char *private_key_hex, const char *address,
         fprintf(stderr, "[Handshake] Erro ao derivar par de chaves\n");
         return -1;
     }
-    /* Converter public key para hex */
-    sodium_bin2hex(public_key_out, 65, pk, 32);
+    /* Converter public key para hex (apenas 32 bytes, sem prefixo ED) */
+    sodium_bin2hex(public_key_out, 65, pk + 1, 32);
     
     printf("[Handshake] Assinatura gerada com sucesso (64 bytes)\n");
     printf("[Handshake] Public key derivada: %s\n", public_key_out);
