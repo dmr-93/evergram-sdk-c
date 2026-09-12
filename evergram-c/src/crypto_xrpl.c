@@ -413,38 +413,24 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    /* Determinar tamanho da seed baseado no formato de entrada */
-    size_t secret_len = (strlen(private_key_hex) == 64) ? 32 : 16;
-    
-    printf("[crypto_xrpl] Seed decodificada (%zu bytes): ", secret_len);
-    for (size_t i = 0; i < secret_len; i++) {
-        printf("%02x", seed[i]);
-    }
-    printf("\n");
-    
     /* 
-     * Se seed for 32 bytes (hex), usar diretamente como Ed25519 seed
-     * Se seed for 16 bytes (Base58 entropy), aplicar SHA512 primeiro
+     * IMPORTANTE: ripple-keypairs SEMPRE usa apenas os primeiros 16 bytes da seed
+     * e aplica SHA512 neles para obter a seed Ed25519 de 32 bytes.
+     * Mesmo que a seed tenha 32 bytes, usamos apenas os primeiros 16!
      */
     unsigned char ed25519_seed[32];
+    unsigned char sha512_hash[64];
     
-    if (secret_len == 32) {
-        /* Seed hexadecimal de 32 bytes - usar diretamente */
-        memcpy(ed25519_seed, seed, 32);
-        printf("[crypto_xrpl] Usando seed hexadecimal de 32 bytes diretamente\n");
-    } else {
-        /* Seed de 16 bytes - aplicar SHA512 como ripple-keypairs faz */
-        unsigned char sha512_hash[64];
-        SHA512(seed, secret_len, sha512_hash);
-        
-        printf("[crypto_xrpl] SHA512 da seed 16-byte (64 bytes): ");
-        for (int i = 0; i < 16; i++) {
-            printf("%02x", sha512_hash[i]);
-        }
-        printf("...\n");
-        
-        memcpy(ed25519_seed, sha512_hash, 32);
+    /* Usar apenas os primeiros 16 bytes da seed decodificada */
+    SHA512(seed, 16, sha512_hash);
+    
+    printf("[crypto_xrpl] SHA512 dos primeiros 16 bytes da seed (64 bytes): ");
+    for (int i = 0; i < 16; i++) {
+        printf("%02x", sha512_hash[i]);
     }
+    printf("...\n");
+    
+    memcpy(ed25519_seed, sha512_hash, 32);
     
     printf("[crypto_xrpl] Seed Ed25519 final (32 bytes): ");
     for (int i = 0; i < 32; i++) {

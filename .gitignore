@@ -4,30 +4,46 @@
 *.so
 *.o
 *.obj
-lib/
-obj/
+*.dll
+*.exe
+*.class
+*.pyc
+__pycache__/
 
 # Dependencies
+node_modules/
 .venv/
 venv/
-node_modules/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
 .env
 .env.local
-*.env.*
+.env.*
+
+# Build directories
+build/
+dist/
+target/
+.gradle/
 
 # Editors
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
 
-# Distribution and build directories
-dist/
-build/
-target/
+# Logs
+*.log
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Python cache
+.mypy_cache/
+.pytest_cache/
+
+# System files
+.DS_Store
+Thumbs.db
 ```
