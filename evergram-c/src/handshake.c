@@ -61,10 +61,10 @@ static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
     return (int)bytes_len;
 }
 
-/* Assinar desafio com wallet XRPL */
-static int sign_challenge(const uint8_t *secret_key_bytes, const char *address, 
+/* Assinar desafio com wallet XRPL usando ripple-keypairs compativel */
+static int sign_challenge(const char *private_key_hex, const char *address, 
                           const char *device_id, const char *nonce_hex, size_t nonce_len, 
-                          uint8_t *signature_out) {
+                          uint8_t *signature_out, char *public_key_out) {
     /* Construir mensagem: "evergram-auth:{address}:{deviceId}:{nonce}" */
     /* O nonce já vem como string hex do servidor */
     char challenge[512];
@@ -82,17 +82,49 @@ static int sign_challenge(const uint8_t *secret_key_bytes, const char *address,
     }
     printf("\n");
     
-    /* Assinar com Ed25519 diretamente nos bytes UTF-8 do challenge */
-    /* libsodium crypto_sign_detached espera: (mensagem em bytes, tamanho, secret_key) */
-    unsigned long long sig_len;
-    if (crypto_sign_detached(signature_out, &sig_len, 
-                             (const uint8_t*)challenge, len, 
-                             secret_key_bytes) != 0) {
-        fprintf(stderr, "[Handshake] Erro ao assinar desafio\n");
+    /* Converter challenge para hex */
+    char challenge_hex[1025];
+    if (len * 2 + 1 > sizeof(challenge_hex)) {
+        fprintf(stderr, "[Handshake] Buffer challenge_hex muito pequeno\n");
+        return -1;
+    }
+    sodium_bin2hex(challenge_hex, sizeof(challenge_hex), (const unsigned char*)challenge, len);
+    
+    /* Assinar usando a função compatível com ripple-keypairs */
+    char signature_hex[129];
+    int ret = evergram_sign_with_xrpl_seed(challenge_hex, private_key_hex, signature_hex, sizeof(signature_hex));
+    if (ret != EVERGRAM_SUCCESS) {
+        fprintf(stderr, "[Handshake] Erro ao assinar desafio: %d\n", ret);
         return -1;
     }
     
-    printf("[Handshake] Assinatura gerada com sucesso (%llu bytes)\n", sig_len);
+    /* Converter assinatura hex para bytes */
+    size_t sig_len;
+    if (sodium_hex2bin(signature_out, 64, signature_hex, 128, NULL, &sig_len, NULL) != 0) {
+        fprintf(stderr, "[Handshake] Erro ao converter assinatura hex\n");
+        return -1;
+    }
+    
+    /* Obter public key derivada da seed */
+    unsigned char seed[32];
+    ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
+    if (ret != EVERGRAM_SUCCESS) {
+        fprintf(stderr, "[Handshake] Erro ao decodificar seed\n");
+        return -1;
+    }
+    
+    unsigned char pk[32], sk[64];
+    ret = evergram_derive_keypair_from_seed(seed, 32, pk, sk);
+    if (ret != EVERGRAM_SUCCESS) {
+        fprintf(stderr, "[Handshake] Erro ao derivar par de chaves\n");
+        return -1;
+    }
+    
+    /* Converter public key para hex */
+    sodium_bin2hex(public_key_out, 65, pk, 32);
+    
+    printf("[Handshake] Assinatura gerada com sucesso (64 bytes)\n");
+    printf("[Handshake] Public key derivada: %s\n", public_key_out);
     return 0;
 }
 
@@ -138,10 +170,11 @@ int send_auth_response(evergram_t *eg) {
     
     printf("[Handshake] Usando nonce string: %s (len=%zu)\n", nonce_str, egi->auth_challenge_nonce_len);
     
-    /* Assinar o challenge */
+    /* Assinar o challenge usando ripple-keypairs compativel */
     uint8_t signature[64];
-    if (sign_challenge(sk, egi->wallet.address, egi->device.device_id,
-                       nonce_str, egi->auth_challenge_nonce_len, signature) != 0) {
+    char derived_public_key[65];
+    if (sign_challenge(egi->wallet.private_key_hex, egi->wallet.address, egi->device.device_id,
+                       nonce_str, egi->auth_challenge_nonce_len, signature, derived_public_key) != 0) {
         return EVERGRAM_ERR_CRYPTO;
     }
     
