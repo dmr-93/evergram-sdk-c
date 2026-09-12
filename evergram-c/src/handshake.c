@@ -105,7 +105,7 @@ static int sign_challenge(const char *private_key_hex, const char *address,
         return -1;
     }
     
-    /* Obter seed (agora retorna 32 bytes para hex, ou 16 para Base58) */
+    /* Obter public key a partir da seed */
     unsigned char seed[32];
     ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
     if (ret != EVERGRAM_SUCCESS) {
@@ -113,7 +113,7 @@ static int sign_challenge(const char *private_key_hex, const char *address,
         return -1;
     }
     
-    /* Determinar tamanho da seed baseado no retorno */
+    /* Determinar tamanho da seed baseado no formato */
     size_t seed_len = (strlen(private_key_hex) == 64) ? 32 : 16;
     
     unsigned char pk[33], sk[33];  /* Formato XRPL: 33 bytes com prefixo 0xED */
