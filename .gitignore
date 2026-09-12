@@ -1,18 +1,12 @@
 ```
-# Dependencies
-temp_sdk/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Editors
-.vscode/
-.idea/
+# Compiled and build artifacts
+*.a
+*.so
+*.o
+*.obj
+lib/
+obj/
+# Temp files
+temp_sdk
+test_seed
 ```
