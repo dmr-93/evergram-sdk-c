@@ -4,82 +4,39 @@
 *.obj
 *.a
 *.so
-*.dylib
-*.dll
 *.exe
-*.out
+*.dll
+*.pyc
+__pycache__/
+
+# Build directories
+build/
+dist/
 obj/
-lib/
-bin/
 
 # Dependencies
 node_modules/
-venv/
 .venv/
-__pycache__/
-*.egg-info/
-dist/
-build/
-target/
-.gradle/
+venv/
+.env
+.env.local
+*.env.*
 
 # Logs and temp files
 *.log
 *.tmp
 *.swp
-*.swo
-
-# Environment
-.env
-.env.local
-*.env.*
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-
-# OS specific
-.DS_Store
-Thumbs.db
 
 # Coverage
+.coverage
 coverage/
 htmlcov/
-.coverage
 
-# Python specific
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-*.egg
-*.manifest
-*.spec
-
-# C/C++ specific
-*.o
-*.obj
-*.a
-*.lib
-*.so
-*.dylib
-*.dll
-*.exe
-*.out
-*.i
-*.ii
-*.s
-*.mod
-*.s~
-*.bak
-*.orig
-*.rej
-*~
-
-# Build directories
-build/
-dist/
+# OS
+.DS_Store
+Thumbs.db
 ```
