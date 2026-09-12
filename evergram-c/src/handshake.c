@@ -76,16 +76,17 @@ static int sign_challenge(const uint8_t *secret_key_bytes, const char *address,
     
     printf("[Handshake] Challenge string: %s\n", challenge);
     printf("[Handshake] Challenge length: %d\n", len);
-    printf("[Handshake] Challenge bytes: ");
+    printf("[Handshake] Challenge bytes (UTF-8): ");
     for (int i = 0; i < len && i < 50; i++) {
         printf("%02x ", (unsigned char)challenge[i]);
     }
     printf("\n");
     
-    /* Assinar com Ed25519 */
+    /* Assinar com Ed25519 diretamente nos bytes UTF-8 do challenge */
+    /* libsodium crypto_sign_detached espera: (mensagem em bytes, tamanho, secret_key) */
     unsigned long long sig_len;
     if (crypto_sign_detached(signature_out, &sig_len, 
-                             (const uint8_t*)challenge, strlen(challenge), 
+                             (const uint8_t*)challenge, len, 
                              secret_key_bytes) != 0) {
         fprintf(stderr, "[Handshake] Erro ao assinar desafio\n");
         return -1;
@@ -146,11 +147,12 @@ int send_auth_response(evergram_t *eg) {
     
     /* Construir ChainIdentity */
     Evergram__ChainIdentity identity = EVERGRAM__CHAIN_IDENTITY__INIT;
+    identity.has_chain_family = 1;  // Marcar campo como presente (protobuf required)
     identity.chain_family = EVERGRAM__CHAIN_FAMILY__XRPL;  // XRPL = 1
     identity.address = egi->wallet.address;
     identity.network_id = "0";
     
-    printf("[Handshake] Chain family set: XRPL (%d)\n", identity.chain_family);
+    printf("[Handshake] Chain family set: XRPL (%d), has_chain_family=%d\n", identity.chain_family, identity.has_chain_family);
     
     /* Criar SignedMessageProof - usa public_key_hex e signature_hex como strings hex */
     char signature_hex[129];
@@ -249,11 +251,12 @@ int send_register_device(evergram_t *eg) {
     
     /* Construir ChainIdentity */
     Evergram__ChainIdentity identity = EVERGRAM__CHAIN_IDENTITY__INIT;
+    identity.has_chain_family = 1;  // Marcar campo como presente (protobuf required)
     identity.chain_family = EVERGRAM__CHAIN_FAMILY__XRPL;  // XRPL = 1
     identity.address = egi->wallet.address;
     identity.network_id = "0";
     
-    printf("[Handshake] RegisterDevice - Chain family set: XRPL (%d)\n", identity.chain_family);
+    printf("[Handshake] RegisterDevice - Chain family set: XRPL (%d), has_chain_family=%d\n", identity.chain_family, identity.has_chain_family);
     
     /* Criar Device */
     Evergram__Device device = EVERGRAM__DEVICE__INIT;
