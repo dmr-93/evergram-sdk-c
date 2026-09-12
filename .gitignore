@@ -1,1 +1,23 @@
-Nothing should be ignored based on the provided file changes. The only modified file is `evergram-c/identity.json`, which appears to be a source/config file and should not be ignored.
+```
+# Compiled and build artifacts
+*.o
+*.obj
+*.a
+*.so
+*.exe
+*.dll
+*.out
+
+# Build directories
+obj/
+lib/
+bin/
+
+# Test executables
+test_*
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+```
