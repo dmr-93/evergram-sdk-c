@@ -407,14 +407,17 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
     
     /* Decodificar seed privada (pode ser hex ou Base58) */
     unsigned char seed[32];
-    int secret_len = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
-    if (secret_len <= 0) {
-        fprintf(stderr, "[crypto_xrpl] Erro ao decodificar seed: %d\n", secret_len);
+    int decode_ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
+    if (decode_ret != EVERGRAM_SUCCESS) {
+        fprintf(stderr, "[crypto_xrpl] Erro ao decodificar seed: %d\n", decode_ret);
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    printf("[crypto_xrpl] Seed decodificada (%d bytes): ", secret_len);
-    for (int i = 0; i < secret_len; i++) {
+    /* Determinar tamanho da seed baseado no formato de entrada */
+    size_t secret_len = (strlen(private_key_hex) == 64) ? 32 : 16;
+    
+    printf("[crypto_xrpl] Seed decodificada (%zu bytes): ", secret_len);
+    for (size_t i = 0; i < secret_len; i++) {
         printf("%02x", seed[i]);
     }
     printf("\n");
