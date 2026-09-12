@@ -112,7 +112,6 @@ static int sign_challenge(const char *private_key_hex, const char *address,
         fprintf(stderr, "[Handshake] Erro ao decodificar seed\n");
         return -1;
     }
-PLACEHOLDER
     unsigned char pk[33], sk[33];  /* Formato XRPL: 33 bytes com prefixo 0xED */
     ret = evergram_derive_keypair_from_seed(seed, 16, pk, sk);
     if (ret != EVERGRAM_SUCCESS) {
@@ -226,7 +225,7 @@ int send_auth_response(evergram_t *eg) {
     evergram__client_message__pack(&msg, packed);
     
     printf("[Handshake] Tamanho da mensagem Auth: %zu bytes\n", packed_size);
-    printf("[Handshake] Primeiros bytes da mensagem: ", packed_size);
+    printf("[Handshake] Primeiros bytes da mensagem: ");
     for (size_t i = 0; i < (packed_size < 20 ? packed_size : 20); i++) {
         printf("%02x ", packed[i]);
     }
