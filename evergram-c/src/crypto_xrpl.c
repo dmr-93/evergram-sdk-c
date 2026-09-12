@@ -383,6 +383,9 @@ int evergram_generate_wallet_xrpl(evergram_wallet_t* wallet) {
  * 
  * Esta função replica exatamente o comportamento do sign() do ripple-keypairs
  * Usa crypto_sign_detached para obter apenas a assinatura (64 bytes)
+ * 
+ * IMPORTANTE: message_hex deve ser a string hexadecimal dos bytes da mensagem UTF-8
+ * Por exemplo, se a mensagem é "hello", message_hex deve ser "68656c6c6f"
  */
 int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_key_hex,
                                   char* signature_hex, size_t signature_hex_size) {
@@ -408,49 +411,21 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
     }
     printf("\n");
     
-    /* 
-     * A private_key_hex agora é a secret key completa do libsodium (64 bytes = 128 chars hex).
-     * O ripple-keypairs armazena apenas os primeiros 32 bytes (a seed), mas o libsodium
-     * já retorna a secret key expandida de 64 bytes pronta para uso.
-     * Precisamos usar os primeiros 32 bytes da secret key como seed Ed25519.
-     */
+    /* Decodificar private key hex para bytes */
     unsigned char sk_bytes[64];
     size_t sk_bin_len;
     
     if (strlen(private_key_hex) == 128) {
-        // Secret key completa do libsodium (64 bytes)
+        // Secret key completa do libsodium (64 bytes = 128 chars hex)
         if (sodium_hex2bin(sk_bytes, sizeof(sk_bytes), private_key_hex, 128, NULL, &sk_bin_len, NULL) != 0) {
             return EVERGRAM_ERR_INVALID_PARAM;
         }
-        // Usar apenas os primeiros 32 bytes como seed Ed25519
-        unsigned char ed25519_seed[32];
-        memcpy(ed25519_seed, sk_bytes, 32);
-        
-        printf("[crypto_xrpl] Seed Ed25519 (32 bytes): ");
-        for (int i = 0; i < 32; i++) {
-            printf("%02x", ed25519_seed[i]);
-        }
-        printf("\n");
-        
-        /* Derivar par de chaves da seed Ed25519 */
-        unsigned char pk[32];
-        unsigned char sk[64];
-        
-        int kp_ret = crypto_sign_seed_keypair(pk, sk, ed25519_seed);
-        if (kp_ret != 0) {
-            fprintf(stderr, "[crypto_xrpl] Erro ao gerar par de chaves Ed25519\n");
-            return EVERGRAM_ERR_CRYPTO;
-        }
-        
-        printf("[crypto_xrpl] Public key derivada (32 bytes): ");
-        for (int i = 0; i < 16; i++) {
-            printf("%02x", pk[i]);
-        }
-        printf("...\n");
+        // Usar diretamente a secret key completa
+        printf("[crypto_xrpl] Usando secret key completa (64 bytes)\n");
         
         /* Assinar mensagem usando crypto_sign_detached */
         unsigned char signature[64];
-        if (crypto_sign_detached(signature, NULL, message, bin_msg_len, sk) != 0) {
+        if (crypto_sign_detached(signature, NULL, message, bin_msg_len, sk_bytes) != 0) {
             fprintf(stderr, "[crypto_xrpl] Erro ao assinar mensagem\n");
             return EVERGRAM_ERR_CRYPTO;
         }
@@ -460,6 +435,10 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
             printf("%02x", signature[i]);
         }
         printf("...\n");
+        
+        /* Obter public key da secret key para verificacao */
+        unsigned char pk[32];
+        memcpy(pk, sk_bytes + 32, 32);  // Public key está nos últimos 32 bytes
         
         /* Verificar assinatura */
         if (crypto_sign_verify_detached(signature, message, bin_msg_len, pk) != 0) {
@@ -477,28 +456,34 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
         
         return EVERGRAM_SUCCESS;
     } else if (strlen(private_key_hex) == 64) {
-        // Seed de 32 bytes - usar diretamente (sem SHA512)
+        // Seed de 32 bytes - ripple-keypairs aplica SHA512 e usa primeiros 32 bytes
         if (sodium_hex2bin(sk_bytes, 32, private_key_hex, 64, NULL, &sk_bin_len, NULL) != 0) {
             return EVERGRAM_ERR_INVALID_PARAM;
         }
         
-        printf("[crypto_xrpl] Seed hexadecimal convertida para 32 bytes: ");
+        printf("[crypto_xrpl] Seed hexadecimal (32 bytes): ");
         for (int i = 0; i < 32; i++) {
             printf("%02x", sk_bytes[i]);
         }
         printf("\n");
         
-        /* Usar seed diretamente (ripple-keypairs behavior para seeds de 32 bytes) */
-        unsigned char ed25519_seed[32];
-        memcpy(ed25519_seed, sk_bytes, 32);
+        /* 
+         * ripple-keypairs behavior para seeds de 32 bytes:
+         * Aplica SHA512 na seed e usa os primeiros 32 bytes como seed Ed25519
+         */
+        unsigned char sha512_hash[64];
+        SHA512(sk_bytes, 32, sha512_hash);
         
-        printf("[crypto_xrpl] Seed Ed25519 final (32 bytes): ");
+        unsigned char ed25519_seed[32];
+        memcpy(ed25519_seed, sha512_hash, 32);
+        
+        printf("[crypto_xrpl] SHA512(seed) primeiros 32 bytes: ");
         for (int i = 0; i < 32; i++) {
             printf("%02x", ed25519_seed[i]);
         }
         printf("\n");
         
-        /* Derivar par de chaves */
+        /* Derivar par de chaves Ed25519 a partir da seed derivada */
         unsigned char pk[32];
         unsigned char sk[64];
         
@@ -520,7 +505,7 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
         }
         printf("...\n");
         
-        /* Assinar */
+        /* Assinar mensagem usando a secret key derivada */
         unsigned char signature[64];
         if (crypto_sign_detached(signature, NULL, message, bin_msg_len, sk) != 0) {
             fprintf(stderr, "[crypto_xrpl] Erro ao assinar mensagem\n");
@@ -533,6 +518,7 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
         }
         printf("...\n");
         
+        /* Verificar assinatura */
         if (crypto_sign_verify_detached(signature, message, bin_msg_len, pk) != 0) {
             fprintf(stderr, "[crypto_xrpl] ERRO: Verificacao da assinatura falhou!\n");
             return EVERGRAM_ERR_CRYPTO;
@@ -547,7 +533,7 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
         
         return EVERGRAM_SUCCESS;
     } else {
-        fprintf(stderr, "[crypto_xrpl] Private key deve ter 64 ou 128 caracteres hex\n");
+        fprintf(stderr, "[crypto_xrpl] Private key deve ter 64 ou 128 caracteres hex, tem %zu\n", strlen(private_key_hex));
         return EVERGRAM_ERR_INVALID_PARAM;
     }
 }
