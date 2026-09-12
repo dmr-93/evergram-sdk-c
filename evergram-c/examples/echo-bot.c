@@ -211,17 +211,17 @@ int load_or_create_identity(evergram_wallet_t* wallet, evergram_device_t* device
 void print_usage(const char* prog_name) {
     printf("Uso: %s [opções]\n", prog_name);
     printf("\nOpções:\n");
-    printf("  --url URL          URL do WebSocket (default: ws://localhost:9000/api/ws)\n");
+    printf("  --url URL          URL do WebSocket (default: wss://staging.evergram.app/api/ws)\n");
     printf("  --name NOME        Nome do bot (default: EchoBot)\n");
     printf("  --identity ARQ     Arquivo de identidade (default: identity.json)\n");
     printf("  --help             Mostrar esta ajuda\n");
     printf("\nExemplo:\n");
-    printf("  %s --url ws://localhost:9000/api/ws --name MeuBot\n", prog_name);
+    printf("  %s --url wss://staging.evergram.app/api/ws --name MeuBot\n", prog_name);
 }
 
 int main(int argc, char* argv[]) {
     // Configurações padrão
-    const char* ws_url = "ws://localhost:9000/api/ws";
+    const char* ws_url = "wss://staging.evergram.app/api/ws";
     const char* bot_name = "EchoBot";
     const char* identity_file = "identity.json";
     

@@ -171,6 +171,25 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
             }
         }
     }
+    /* Verificar se e ErrorResponse (mensagem de erro direta do servidor) */
+    else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ERROR && server_msg->error) {
+        fprintf(stderr, "[Parser] ErrorResponse recebido\n");
+        
+        Evergram__Error *err = server_msg->error;
+        if (err && err->message) {
+            printf("[Parser] Erro: %s\n", err->message);
+            
+            /* Se for device_not_registered ou invalid_device, tentar registrar */
+            if (err->code && (strstr(err->code, "device_not_registered") || strstr(err->code, "invalid_device"))) {
+                printf("[Parser] Device nao registrado/invalido, tentando registrar...\n");
+                send_register_device(eg);
+            }
+            
+            if (eg->on_error) {
+                eg->on_error(eg, EVERGRAM_ERR_PROTO, err->message);
+            }
+        }
+    }
     /* Verificar se e Envelope (mensagem de chat recebida) */
     else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ENVELOPE && server_msg->envelope) {
         printf("[Parser] Envelope recebido\n");

@@ -79,27 +79,26 @@ static evergram_error_t evergram_derive_device_id_bin(const unsigned char *publi
 
 /**
  * @brief Deriva device_id a partir da chave pública (API pública - hex string)
+ * 
+ * IMPORTANTE: O device_id é simplesmente os primeiros 32 caracteres hex do devicePubHex,
+ * NÃO um hash! Isso é exatamente como o SDK TypeScript faz.
  */
 int evergram_derive_device_id(const char* device_pub_hex, char* device_id_out) {
     if (!device_pub_hex || !device_id_out) {
         return (int)EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    /* Converte hex para binário */
-    unsigned char pub_key[EVERGRAM_DEVICE_KEY_LEN];
-    if (evergram_hex_to_key(device_pub_hex, pub_key) != EVERGRAM_SUCCESS) {
+    /* Verificar se a chave pública tem tamanho válido (64 caracteres hex = 32 bytes) */
+    size_t pub_hex_len = strlen(device_pub_hex);
+    if (pub_hex_len < 32) {
         return (int)EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    /* Deriva ID em binário */
-    unsigned char device_id_bin[EVERGRAM_DEVICE_ID_LEN];
-    if (evergram_derive_device_id_bin(pub_key, device_id_bin) != EVERGRAM_SUCCESS) {
-        return (int)EVERGRAM_ERR_CRYPTO;
-    }
+    /* Copiar os primeiros 32 caracteres hex diretamente como device_id */
+    memcpy(device_id_out, device_pub_hex, 32);
+    device_id_out[32] = '\0';
     
-    /* Converte ID binário para hex string */
-    sodium_bin2hex(device_id_out, EVERGRAM_MAX_DEVICE_ID_LEN, 
-                   device_id_bin, EVERGRAM_DEVICE_ID_LEN);
+    printf("[crypto] Device ID derivado: %s (primeiros 32 chars de device_pub_hex)\n", device_id_out);
     
     return (int)EVERGRAM_SUCCESS;
 }
