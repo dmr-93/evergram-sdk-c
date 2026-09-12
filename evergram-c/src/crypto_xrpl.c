@@ -406,24 +406,24 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
     
     /* Decodificar seed privada (pode ser hex ou Base58) */
     unsigned char seed[32];
-    int ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
-    if (ret != EVERGRAM_SUCCESS) {
-        fprintf(stderr, "[crypto_xrpl] Erro ao decodificar seed: %d\n", ret);
-        return ret;
+    int secret_len = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
+    if (secret_len <= 0) {
+        fprintf(stderr, "[crypto_xrpl] Erro ao decodificar seed: %d\n", secret_len);
+        return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    printf("[crypto_xrpl] Seed decodificada (32 bytes): ");
-    for (int i = 0; i < 32; i++) {
+    printf("[crypto_xrpl] Seed decodificada (%d bytes): ", secret_len);
+    for (int i = 0; i < secret_len; i++) {
         printf("%02x", seed[i]);
     }
     printf("\n");
     
     /* 
-     * ripple-keypairs usa SHA512 simples (não HMAC) na seed de 32 bytes
+     * ripple-keypairs usa SHA512 na seed secreta (16 bytes para sEd...)
      * e pega os primeiros 32 bytes como seed Ed25519
      */
     unsigned char sha512_hash[64];
-    SHA512(seed, 32, sha512_hash);
+    SHA512(seed, secret_len, sha512_hash);
     
     printf("[crypto_xrpl] SHA512 da seed (64 bytes): ");
     for (int i = 0; i < 16; i++) {
@@ -439,8 +439,8 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
     unsigned char pk[32];
     unsigned char sk[64];
     
-    ret = crypto_sign_seed_keypair(pk, sk, ed25519_seed);
-    if (ret != 0) {
+    int kp_ret = crypto_sign_seed_keypair(pk, sk, ed25519_seed);
+    if (kp_ret != 0) {
         fprintf(stderr, "[crypto_xrpl] Erro ao gerar par de chaves Ed25519\n");
         return EVERGRAM_ERR_CRYPTO;
     }
