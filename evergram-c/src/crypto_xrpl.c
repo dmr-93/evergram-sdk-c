@@ -242,7 +242,7 @@ int evergram_derive_keypair_from_seed(const unsigned char* seed, size_t seed_len
      * Isso produz 64 bytes: os primeiros 32 são usados como seed para Ed25519
      */
     const char* hmac_key = "ed25519 seed";
-    unsigned char hmac_result[EVP_MAX_MD_SIZE];
+    unsigned char hmac_result[64];
     unsigned int hmac_len;
     
     HMAC(EVP_sha512(), hmac_key, strlen(hmac_key), seed, seed_len, hmac_result, &hmac_len);
@@ -252,13 +252,13 @@ int evergram_derive_keypair_from_seed(const unsigned char* seed, size_t seed_len
     }
     
     /* 
-     * Os primeiros 32 bytes do HMAC são a "private key" usada pelo libsodium
+     * Os primeiros 32 bytes do HMAC são a seed Ed25519 usada pelo libsodium
      * para gerar o par de chaves Ed25519
      */
     unsigned char ed25519_seed[32];
     memcpy(ed25519_seed, hmac_result, 32);
     
-    /* Gerar par de chaves Ed25519 a partir da seed */
+    /* Gerar par de chaves Ed25519 a partir da seed derivada via HMAC */
     if (crypto_sign_seed_keypair(public_key, private_key, ed25519_seed) != 0) {
         return EVERGRAM_ERR_CRYPTO;
     }
@@ -325,6 +325,13 @@ int evergram_generate_wallet_xrpl(evergram_wallet_t* wallet) {
  * 
  * Esta função replica exatamente o comportamento do sign() do ripple-keypairs
  */
+
+/**
+ * @brief Assina mensagem usando chave privada derivada de seed XRPL
+ * 
+ * Esta função replica exatamente o comportamento do sign() do ripple-keypairs
+ * Usa crypto_sign_detached para obter apenas a assinatura (64 bytes)
+ */
 int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_key_hex,
                                   char* signature_hex, size_t signature_hex_size) {
     if (!message_hex || !private_key_hex || !signature_hex) {
@@ -343,32 +350,83 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
+    printf("[crypto_xrpl] Mensagem para assinar (%zu bytes): ", bin_msg_len);
+    for (size_t i = 0; i < bin_msg_len && i < 50; i++) {
+        printf("%02x ", message[i]);
+    }
+    printf("\n");
+    
     /* Decodificar seed privada (pode ser hex ou Base58) */
     unsigned char seed[32];
     int ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
     if (ret != EVERGRAM_SUCCESS) {
+        fprintf(stderr, "[crypto_xrpl] Erro ao decodificar seed: %d\n", ret);
         return ret;
     }
     
-    /* Derivar par de chaves da seed */
+    printf("[crypto_xrpl] Seed decodificada (32 bytes): ");
+    for (int i = 0; i < 32; i++) {
+        printf("%02x", seed[i]);
+    }
+    printf("\n");
+    
+    /* Aplicar HMAC-SHA512 para derivar a seed Ed25519 (como faz o ripple-keypairs) */
+    const char* hmac_key = "ed25519 seed";
+    unsigned char hmac_result[64];
+    unsigned int hmac_len;
+    HMAC(EVP_sha512(), hmac_key, strlen(hmac_key), seed, 32, hmac_result, &hmac_len);
+    
+    printf("[crypto_xrpl] HMAC-SHA512 resultado (64 bytes): ");
+    for (int i = 0; i < 16; i++) {
+        printf("%02x", hmac_result[i]);
+    }
+    printf("...\n");
+    
+    /* Usar primeiros 32 bytes como seed para Ed25519 */
+    unsigned char ed25519_seed[32];
+    memcpy(ed25519_seed, hmac_result, 32);
+    
+    /* Derivar par de chaves da seed Ed25519 */
     unsigned char pk[32];
     unsigned char sk[64];
     
-    ret = evergram_derive_keypair_from_seed(seed, 32, pk, sk);
-    if (ret != EVERGRAM_SUCCESS) {
-        return ret;
-    }
-    
-    /* Assinar mensagem */
-    unsigned char signed_message[msg_len / 2 + 64];
-    unsigned long long signed_len;
-    
-    if (crypto_sign(signed_message, &signed_len, message, bin_msg_len, sk) != 0) {
+    ret = crypto_sign_seed_keypair(pk, sk, ed25519_seed);
+    if (ret != 0) {
+        fprintf(stderr, "[crypto_xrpl] Erro ao gerar par de chaves Ed25519\n");
         return EVERGRAM_ERR_CRYPTO;
     }
     
-    /* Extrair assinatura (últimos 64 bytes) */
-    unsigned char* signature = signed_message + bin_msg_len;
+    printf("[crypto_xrpl] Public key derivada (32 bytes): ");
+    for (int i = 0; i < 16; i++) {
+        printf("%02x", pk[i]);
+    }
+    printf("...\n");
+    
+    printf("[crypto_xrpl] Secret key derivada (64 bytes): ");
+    for (int i = 0; i < 16; i++) {
+        printf("%02x", sk[i]);
+    }
+    printf("...\n");
+    
+    /* Assinar mensagem usando crypto_sign_detached para obter apenas a assinatura */
+    unsigned char signature[64];
+    if (crypto_sign_detached(signature, NULL, message, bin_msg_len, sk) != 0) {
+        fprintf(stderr, "[crypto_xrpl] Erro ao assinar mensagem\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    
+    printf("[crypto_xrpl] Assinatura gerada (64 bytes): ");
+    for (int i = 0; i < 16; i++) {
+        printf("%02x", signature[i]);
+    }
+    printf("...\n");
+    
+    /* Verificar assinatura com a public key (apenas para debug) */
+    if (crypto_sign_verify_detached(signature, message, bin_msg_len, pk) != 0) {
+        fprintf(stderr, "[crypto_xrpl] ERRO: Verificacao da assinatura falhou!\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    printf("[crypto_xrpl] Assinatura verificada com sucesso!\n");
     
     /* Converter assinatura para hex */
     if (signature_hex_size < 129) {

@@ -135,29 +135,6 @@ int send_auth_response(evergram_t *eg) {
     /* Cast para estrutura interna completa */
     evergram_t *egi = eg;
     
-    /* Converter private_key_hex para bytes 
-     * Para libsodium, crypto_sign_detached precisa da secret key COMPLETA (64 bytes)
-     * A secret key Ed25519 é: seed (32 bytes) + public key (32 bytes)
-     * Nosso private_key_hex armazena apenas a seed (32 bytes = 64 caracteres hex)
-     * Precisamos reconstruir a secret key completa usando crypto_sign_seed_keypair
-     */
-    unsigned char seed_bytes[32];
-    int seed_len = hex_to_bytes(egi->wallet.private_key_hex, seed_bytes, sizeof(seed_bytes));
-    if (seed_len != 32) {
-        fprintf(stderr, "[Handshake] Erro ao converter seed hex (esperado 32 bytes, obtido %d)\n", seed_len);
-        fprintf(stderr, "[Handshake] private_key_hex: %s (len=%zu)\n", egi->wallet.private_key_hex, strlen(egi->wallet.private_key_hex));
-        return EVERGRAM_ERR_CRYPTO;
-    }
-    
-    /* Reconstruir o par de chaves completo a partir da seed */
-    unsigned char pk[32], sk[64];
-    if (crypto_sign_seed_keypair(pk, sk, seed_bytes) != 0) {
-        fprintf(stderr, "[Handshake] Erro ao reconstruir chaves Ed25519\n");
-        return EVERGRAM_ERR_CRYPTO;
-    }
-    
-    /* Agora sk contém a secret key completa (64 bytes) necessária para crypto_sign_detached */
-    
     /* O nonce está armazenado como string hex no buffer auth_challenge_nonce */
     /* Precisamos usar essa string diretamente na assinatura */
     char nonce_str[257];
@@ -171,6 +148,7 @@ int send_auth_response(evergram_t *eg) {
     printf("[Handshake] Usando nonce string: %s (len=%zu)\n", nonce_str, egi->auth_challenge_nonce_len);
     
     /* Assinar o challenge usando ripple-keypairs compativel */
+    /* Esta função já faz todo o processo: decodificar seed XRPL, aplicar HMAC-SHA512, derivar chaves e assinar */
     uint8_t signature[64];
     char derived_public_key[65];
     if (sign_challenge(egi->wallet.private_key_hex, egi->wallet.address, egi->device.device_id,
