@@ -63,12 +63,12 @@ static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
 
 /* Assinar desafio com wallet XRPL usando ripple-keypairs compativel */
 static int sign_challenge(const char *private_key_hex, const char *address, 
-                          const char *device_id, const char *nonce_hex, size_t nonce_len, 
+                          const char *device_id, const char *nonce_str, size_t nonce_len, 
                           uint8_t *signature_out, char *public_key_out) {
     /* Construir mensagem: "evergram-auth:{address}:{deviceId}:{nonce}" */
-    /* O nonce já vem como string hex do servidor */
+    /* O nonce já vem como string ASCII hex do servidor (ex: "48f55c342e81c3394a3fc62bd3d9cb46") */
     char challenge[512];
-    int len = snprintf(challenge, sizeof(challenge), "evergram-auth:%s:%s:%.*s", address, device_id, (int)nonce_len, nonce_hex);
+    int len = snprintf(challenge, sizeof(challenge), "evergram-auth:%s:%s:%.*s", address, device_id, (int)nonce_len, nonce_str);
     if (len < 0 || len >= (int)sizeof(challenge)) {
         fprintf(stderr, "[Handshake] Challenge muito grande: %d bytes\n", len);
         return -1;
@@ -82,7 +82,8 @@ static int sign_challenge(const char *private_key_hex, const char *address,
     }
     printf("\n");
     
-    /* Converter challenge para hex */
+    /* Assinar usando a função compatível com ripple-keypairs */
+    /* IMPORTANTE: Passamos a mensagem como string hex dos bytes UTF-8, não os bytes brutos */
     char challenge_hex[1025];
     if (len * 2 + 1 > sizeof(challenge_hex)) {
         fprintf(stderr, "[Handshake] Buffer challenge_hex muito pequeno\n");
@@ -90,7 +91,6 @@ static int sign_challenge(const char *private_key_hex, const char *address,
     }
     sodium_bin2hex(challenge_hex, sizeof(challenge_hex), (const unsigned char*)challenge, len);
     
-    /* Assinar usando a função compatível com ripple-keypairs */
     char signature_hex[129];
     int ret = evergram_sign_with_xrpl_seed(challenge_hex, private_key_hex, signature_hex, sizeof(signature_hex));
     if (ret != EVERGRAM_SUCCESS) {
@@ -124,7 +124,6 @@ static int sign_challenge(const char *private_key_hex, const char *address,
     }
     sodium_bin2hex(public_key_out, 65, pk_raw, 32);
     
-    printf("[Handshake] Assinatura gerada com sucesso (64 bytes)\n");
     printf("[Handshake] Public key derivada: %s\n", public_key_out);
     return 0;
 }

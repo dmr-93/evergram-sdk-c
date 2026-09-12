@@ -143,29 +143,44 @@ int load_or_create_identity(evergram_wallet_t* wallet, evergram_device_t* device
         // Carregar identidade existente
         char line[256];
         
-        if (fgets(line, sizeof(line), f)) {
-            sscanf(line, "seed=%s", wallet->seed);
-        }
-        if (fgets(line, sizeof(line), f)) {
-            sscanf(line, "address=%s", wallet->address);
-        }
-        if (fgets(line, sizeof(line), f)) {
-            sscanf(line, "pubkey=%s", wallet->public_key_hex);
-        }
-        if (fgets(line, sizeof(line), f)) {
-            sscanf(line, "privkey=%s", wallet->private_key_hex);
-        }
-        if (fgets(line, sizeof(line), f)) {
-            sscanf(line, "device_pub=%s", device->pub_hex);
-        }
-        if (fgets(line, sizeof(line), f)) {
-            sscanf(line, "device_priv=%s", device->priv_hex);
-        }
-        if (fgets(line, sizeof(line), f)) {
-            sscanf(line, "device_id=%s", device->device_id);
+        // Inicializar estrutura
+        memset(wallet, 0, sizeof(*wallet));
+        memset(device, 0, sizeof(*device));
+        
+        while (fgets(line, sizeof(line), f)) {
+            // Remover newline
+            line[strcspn(line, "\r\n")] = 0;
+            
+            if (strncmp(line, "seed=", 5) == 0) {
+                strncpy(wallet->seed, line + 5, sizeof(wallet->seed) - 1);
+            } else if (strncmp(line, "address=", 8) == 0) {
+                strncpy(wallet->address, line + 8, sizeof(wallet->address) - 1);
+            } else if (strncmp(line, "pubkey=", 7) == 0) {
+                strncpy(wallet->public_key_hex, line + 7, sizeof(wallet->public_key_hex) - 1);
+            } else if (strncmp(line, "privkey=", 8) == 0) {
+                // Pode estar vazio ou ter a private key completa
+                const char* value = line + 8;
+                if (strlen(value) > 0) {
+                    strncpy(wallet->private_key_hex, value, sizeof(wallet->private_key_hex) - 1);
+                }
+            } else if (strncmp(line, "device_pub=", 11) == 0) {
+                strncpy(device->pub_hex, line + 11, sizeof(device->pub_hex) - 1);
+            } else if (strncmp(line, "device_priv=", 12) == 0) {
+                strncpy(device->priv_hex, line + 12, sizeof(device->priv_hex) - 1);
+            } else if (strncmp(line, "device_id=", 10) == 0) {
+                strncpy(device->device_id, line + 10, sizeof(device->device_id) - 1);
+            }
         }
         
         fclose(f);
+        
+        // Se private_key_hex estiver vazia, usar a seed como private_key
+        // (o SDK vai derivar as chaves corretamente a partir da seed)
+        if (strlen(wallet->private_key_hex) == 0 && strlen(wallet->seed) > 0) {
+            printf("[Handshake] Usando seed como chave privada (formato legacy)\n");
+            strncpy(wallet->private_key_hex, wallet->seed, sizeof(wallet->private_key_hex) - 1);
+        }
+        
         printf("Identidade carregada de %s\n", identity_file);
         return 1;
     }
