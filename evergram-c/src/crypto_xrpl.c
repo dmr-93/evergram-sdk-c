@@ -176,7 +176,7 @@ int evergram_decode_xrpl_seed(const char* seed_hex_or_base58, unsigned char* see
     
     /* Verificar se é seed hexadecimal (64 caracteres = 32 bytes) */
     if (input_len == 64) {
-        /* É hex - usar todos os 32 bytes como seed Ed25519 direta */
+        /* É hex - converter para 32 bytes, mas depois usar apenas 16 no derive */
         size_t bin_len;
         if (sodium_hex2bin(seed_out, 32, seed_hex_or_base58, input_len, NULL, &bin_len, NULL) != 0) {
             return EVERGRAM_ERR_INVALID_PARAM;
@@ -189,6 +189,7 @@ int evergram_decode_xrpl_seed(const char* seed_hex_or_base58, unsigned char* see
             printf("%02x", seed_out[i]);
         }
         printf("\n");
+        /* Nota: Os primeiros 16 bytes serao usados para derivacao via SHA512 */
         return EVERGRAM_SUCCESS;
     }
     
@@ -269,31 +270,27 @@ int evergram_derive_keypair_from_seed(const unsigned char* seed, size_t seed_len
     
     unsigned char ed25519_seed[32];
     
-    if (seed_len == 16) {
-        /* ripple-keypairs usa SHA512 simples na entropy de 16 bytes */
-        unsigned char sha512_hash[64];
-        SHA512(seed, 16, sha512_hash);
-        
-        printf("[crypto_xrpl] SHA512 da seed 16-byte (64 bytes): ");
-        for (int i = 0; i < 16; i++) {
-            printf("%02x", sha512_hash[i]);
-        }
-        printf("...\n");
-        
-        memcpy(ed25519_seed, sha512_hash, 32);
-    } else {
-        /* Seed de 32 bytes já é a seed Ed25519 direta */
-        memcpy(ed25519_seed, seed, 32);
-        printf("[crypto_xrpl] Usando seed hexadecimal de 32 bytes diretamente\n");
-    }
+    /* SEMPRE usar os primeiros 16 bytes + SHA512, igual ao ripple-keypairs */
+    const unsigned char* seed_16 = (seed_len == 16) ? seed : seed;
     
-    printf("[crypto_xrpl] Seed Ed25519 (32 bytes): ");
+    unsigned char sha512_hash[64];
+    SHA512(seed_16, 16, sha512_hash);
+    
+    printf("[crypto_xrpl] SHA512 dos primeiros 16 bytes da seed (64 bytes): ");
+    for (int i = 0; i < 16; i++) {
+        printf("%02x", sha512_hash[i]);
+    }
+    printf("...\n");
+    
+    memcpy(ed25519_seed, sha512_hash, 32);
+    
+    printf("[crypto_xrpl] Seed Ed25519 final (32 bytes): ");
     for (int i = 0; i < 32; i++) {
         printf("%02x", ed25519_seed[i]);
     }
     printf("\n");
     
-    /* Gerar par de chaves Ed25519 a partir da seed */
+    /* Gerar par de chaves Ed25519 a partir da seed derivada */
     unsigned char pk_raw[32];
     unsigned char sk_raw[64];
     

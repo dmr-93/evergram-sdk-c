@@ -1,3 +1,31 @@
 ```
+# Compiled and build artifacts
+*.a
+*.so
+*.o
+*.obj
+obj/
+lib/
+
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Temporary files
 temp_sdk
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
 ```
