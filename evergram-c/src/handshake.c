@@ -62,7 +62,7 @@ static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_len) {
 }
 
 /* Assinar desafio com wallet XRPL usando ripple-keypairs compativel */
-static int sign_challenge(const char *private_key_hex, const char *address, 
+static int sign_challenge(const char *private_key_hex, const char *public_key_hex, const char *address, 
                           const char *device_id, const char *nonce_str, size_t nonce_len, 
                           uint8_t *signature_out, char *public_key_out) {
     /* Construir mensagem: "evergram-auth:{address}:{deviceId}:{nonce}" */
@@ -107,24 +107,11 @@ static int sign_challenge(const char *private_key_hex, const char *address,
     
     printf("[Handshake] Assinatura gerada com sucesso (64 bytes)\n");
     
-    /* Obter seed em bytes (32 bytes hex -> 32 bytes binario) */
-    unsigned char seed_bytes[32];
-    ret = evergram_decode_xrpl_seed(private_key_hex, seed_bytes, sizeof(seed_bytes));
-    if (ret != EVERGRAM_SUCCESS) {
-        fprintf(stderr, "[Handshake] Erro ao decodificar seed\n");
-        return -1;
-    }
+    /* Usar a public_key_hex já fornecida (derivada corretamente da seed) */
+    strncpy(public_key_out, public_key_hex, 64);
+    public_key_out[64] = '\0';
     
-    /* Derivar public key a partir da seed (para enviar no AuthResponse) */
-    unsigned char pk_raw[32];
-    unsigned char sk_raw[64];
-    if (crypto_sign_seed_keypair(pk_raw, sk_raw, seed_bytes) != 0) {
-        fprintf(stderr, "[Handshake] Erro ao gerar par de chaves\n");
-        return -1;
-    }
-    sodium_bin2hex(public_key_out, 65, pk_raw, 32);
-    
-    printf("[Handshake] Public key derivada: %s\n", public_key_out);
+    printf("[Handshake] Public key usada: %s\n", public_key_out);
     return 0;
 }
 
@@ -151,7 +138,7 @@ int send_auth_response(evergram_t *eg) {
     /* Esta função já faz todo o processo: decodificar seed XRPL, aplicar HMAC-SHA512, derivar chaves e assinar */
     uint8_t signature[64];
     char derived_public_key[65];
-    if (sign_challenge(egi->wallet.private_key_hex, egi->wallet.address, egi->device.device_id,
+    if (sign_challenge(egi->wallet.private_key_hex, egi->wallet.public_key_hex, egi->wallet.address, egi->device.device_id,
                        nonce_str, egi->auth_challenge_nonce_len, signature, derived_public_key) != 0) {
         return EVERGRAM_ERR_CRYPTO;
     }

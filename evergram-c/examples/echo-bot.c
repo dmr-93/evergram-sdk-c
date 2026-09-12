@@ -175,11 +175,17 @@ int load_or_create_identity(evergram_wallet_t* wallet, evergram_device_t* device
         fclose(f);
         
         // Se private_key_hex estiver vazia, usar a seed como private_key
-        // (o SDK vai derivar as chaves corretamente a partir da seed)
+        // A seed tem 64 caracteres hex (32 bytes)
         if (strlen(wallet->private_key_hex) == 0 && strlen(wallet->seed) > 0) {
             printf("[Handshake] Usando seed como chave privada (formato legacy)\n");
             strncpy(wallet->private_key_hex, wallet->seed, sizeof(wallet->private_key_hex) - 1);
+            wallet->private_key_hex[sizeof(wallet->private_key_hex) - 1] = '\0';
+            printf("[Handshake] Private key hex definida como: %s (len=%zu)\n", wallet->private_key_hex, strlen(wallet->private_key_hex));
         }
+        
+        printf("[Handshake] Wallet address: %s\n", wallet->address);
+        printf("[Handshake] Device ID: %s\n", device->device_id);
+        printf("[Handshake] Private key hex length: %zu\n", strlen(wallet->private_key_hex));
         
         printf("Identidade carregada de %s\n", identity_file);
         return 1;
