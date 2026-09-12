@@ -270,19 +270,25 @@ int evergram_derive_keypair_from_seed(const unsigned char* seed, size_t seed_len
     
     unsigned char ed25519_seed[32];
     
-    /* SEMPRE usar os primeiros 16 bytes + SHA512, igual ao ripple-keypairs */
-    const unsigned char* seed_16 = (seed_len == 16) ? seed : seed;
-    
-    unsigned char sha512_hash[64];
-    SHA512(seed_16, 16, sha512_hash);
-    
-    printf("[crypto_xrpl] SHA512 dos primeiros 16 bytes da seed (64 bytes): ");
-    for (int i = 0; i < 16; i++) {
-        printf("%02x", sha512_hash[i]);
+    /* 
+     * ripple-keypairs behavior:
+     * - Seed de 16 bytes (entropy): aplica SHA512 e usa primeiros 32 bytes como seed Ed25519
+     * - Seed de 32 bytes: usa diretamente como seed Ed25519 (já é a entropy expandida)
+     */
+    if (seed_len == 16) {
+        unsigned char sha512_hash[64];
+        SHA512(seed, 16, sha512_hash);
+        memcpy(ed25519_seed, sha512_hash, 32);
+        
+        printf("[crypto_xrpl] SHA512 dos primeiros 16 bytes da seed (64 bytes): ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02x", sha512_hash[i]);
+        }
+        printf("...\n");
+    } else {
+        /* Seed de 32 bytes - usar diretamente */
+        memcpy(ed25519_seed, seed, 32);
     }
-    printf("...\n");
-    
-    memcpy(ed25519_seed, sha512_hash, 32);
     
     printf("[crypto_xrpl] Seed Ed25519 final (32 bytes): ");
     for (int i = 0; i < 32; i++) {
