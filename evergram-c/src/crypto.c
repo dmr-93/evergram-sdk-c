@@ -80,8 +80,8 @@ static evergram_error_t evergram_derive_device_id_bin(const unsigned char *publi
 /**
  * @brief Deriva device_id a partir da chave pública (API pública - hex string)
  * 
- * IMPORTANTE: O device_id é simplesmente os primeiros 32 caracteres hex do devicePubHex,
- * NÃO um hash! Isso é exatamente como o SDK TypeScript faz.
+ * IMPORTANTE: O device_id é o SHA256(devicePubHex em bytes) truncado para 32 chars hex,
+ * exatamente como o SDK TypeScript faz em deriveDeviceId() em crypto.ts
  */
 int evergram_derive_device_id(const char* device_pub_hex, char* device_id_out) {
     if (!device_pub_hex || !device_id_out) {
@@ -90,15 +90,31 @@ int evergram_derive_device_id(const char* device_pub_hex, char* device_id_out) {
     
     /* Verificar se a chave pública tem tamanho válido (64 caracteres hex = 32 bytes) */
     size_t pub_hex_len = strlen(device_pub_hex);
-    if (pub_hex_len < 32) {
+    if (pub_hex_len < 64) {
         return (int)EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    /* Copiar os primeiros 32 caracteres hex diretamente como device_id */
-    memcpy(device_id_out, device_pub_hex, 32);
+    /* Converter a chave pública hex para bytes */
+    unsigned char pk_bytes[32];
+    if (sodium_hex2bin(pk_bytes, sizeof(pk_bytes), device_pub_hex, 64, NULL, NULL, NULL) != 0) {
+        return (int)EVERGRAM_ERR_CRYPTO;
+    }
+    
+    /* Calcular SHA256 da chave pública em bytes */
+    unsigned char hash[32];
+    if (crypto_hash_sha256(hash, pk_bytes, sizeof(pk_bytes)) != 0) {
+        return (int)EVERGRAM_ERR_CRYPTO;
+    }
+    
+    /* Converter hash para hex */
+    char hash_hex[65];
+    sodium_bin2hex(hash_hex, sizeof(hash_hex), hash, sizeof(hash));
+    
+    /* Copiar apenas os primeiros 32 caracteres hex como device_id */
+    memcpy(device_id_out, hash_hex, 32);
     device_id_out[32] = '\0';
     
-    printf("[crypto] Device ID derivado: %s (primeiros 32 chars de device_pub_hex)\n", device_id_out);
+    printf("[crypto] Device ID derivado: %s (SHA256(pub_hex)[:32])\n", device_id_out);
     
     return (int)EVERGRAM_SUCCESS;
 }

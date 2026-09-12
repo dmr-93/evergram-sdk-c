@@ -125,11 +125,11 @@ int evergram_generate_wallet(evergram_wallet_t* wallet) {
     // Converter para hex strings
     // Seed em hex
     bytes_to_hex(seed, sizeof(seed), wallet->seed, sizeof(wallet->seed));
-    // Chave pública em hex
+    // Chave pública em hex (32 bytes = 64 chars hex)
     bytes_to_hex(pk, sizeof(pk), wallet->public_key_hex, sizeof(wallet->public_key_hex));
-    // Para XRPL, a private_key_hex deve ser apenas a seed (32 bytes = 64 caracteres hex)
-    // Não usamos sk completo pois XRPL usa apenas a seed como private key
-    bytes_to_hex(seed, crypto_sign_SEEDBYTES, wallet->private_key_hex, sizeof(wallet->private_key_hex));
+    // Private key hex deve ser a secret key completa (64 bytes = 128 chars hex)
+    // Isso é compatível com o ripple-keypairs que retorna kp.privateKey
+    bytes_to_hex(sk, sizeof(sk), wallet->private_key_hex, sizeof(wallet->private_key_hex));
     
     // Gerar endereço XRPL no formato Base58 correto (ex: rNPvaf8QNuUFh9xoRTj48BdoodWSywywdw)
     if (xrpl_address_from_pubkey(pk, sizeof(pk), wallet->address, sizeof(wallet->address)) <= 0) {
