@@ -160,7 +160,8 @@ int load_or_create_identity(evergram_wallet_t* wallet, evergram_device_t* device
             } else if (strncmp(line, "privkey=", 8) == 0) {
                 // Pode estar vazio ou ter a private key completa
                 const char* value = line + 8;
-                if (strlen(value) > 0) {
+                size_t val_len = strlen(value);
+                if (val_len > 0 && val_len >= 64) {
                     strncpy(wallet->private_key_hex, value, sizeof(wallet->private_key_hex) - 1);
                 }
             } else if (strncmp(line, "device_pub=", 11) == 0) {
