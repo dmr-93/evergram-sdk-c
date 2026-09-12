@@ -99,31 +99,30 @@ static int sign_challenge(const char *private_key_hex, const char *address,
     }
     
     /* Converter assinatura hex para bytes */
-    size_t sig_len;
-    if (sodium_hex2bin(signature_out, 64, signature_hex, 128, NULL, &sig_len, NULL) != 0) {
+    size_t sig_len_bin;
+    if (sodium_hex2bin(signature_out, 64, signature_hex, 128, NULL, &sig_len_bin, NULL) != 0) {
         fprintf(stderr, "[Handshake] Erro ao converter assinatura hex\n");
         return -1;
     }
     
-    /* Obter public key a partir da seed */
-    unsigned char seed[32];
-    ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
+    printf("[Handshake] Assinatura gerada com sucesso (64 bytes)\n");
+    
+    /* Obter seed em bytes (32 bytes hex -> 32 bytes binario) */
+    unsigned char seed_bytes[32];
+    ret = evergram_decode_xrpl_seed(private_key_hex, seed_bytes, sizeof(seed_bytes));
     if (ret != EVERGRAM_SUCCESS) {
         fprintf(stderr, "[Handshake] Erro ao decodificar seed\n");
         return -1;
     }
     
-    /* Determinar tamanho da seed baseado no formato */
-    size_t seed_len = (strlen(private_key_hex) == 64) ? 32 : 16;
-    
-    unsigned char pk[33], sk[33];  /* Formato XRPL: 33 bytes com prefixo 0xED */
-    ret = evergram_derive_keypair_from_seed(seed, seed_len, pk, sk);
-    if (ret != EVERGRAM_SUCCESS) {
-        fprintf(stderr, "[Handshake] Erro ao derivar par de chaves\n");
+    /* Derivar public key a partir da seed (para enviar no AuthResponse) */
+    unsigned char pk_raw[32];
+    unsigned char sk_raw[64];
+    if (crypto_sign_seed_keypair(pk_raw, sk_raw, seed_bytes) != 0) {
+        fprintf(stderr, "[Handshake] Erro ao gerar par de chaves\n");
         return -1;
     }
-    /* Converter public key para hex (apenas 32 bytes, sem prefixo ED) */
-    sodium_bin2hex(public_key_out, 65, pk + 1, 32);
+    sodium_bin2hex(public_key_out, 65, pk_raw, 32);
     
     printf("[Handshake] Assinatura gerada com sucesso (64 bytes)\n");
     printf("[Handshake] Public key derivada: %s\n", public_key_out);
