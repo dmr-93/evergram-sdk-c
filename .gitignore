@@ -4,44 +4,37 @@
 *.so
 *.o
 *.obj
+*.dll
+*.exe
+*.out
 lib/
-obj/
-dist/
-build/
-target/
-
 # Dependencies
 node_modules/
-.venv/
 venv/
+.venv/
 __pycache__/
 .mypy_cache/
 .pytest_cache/
+target/
 .gradle/
-
 # Logs and temp files
 *.log
 *.tmp
 *.swp
-
 # Environment
 .env
 .env.local
 *.env.*
-
 # Editors
 .vscode/
 .idea/
-
 # System files
 .DS_Store
 Thumbs.db
-
 # Coverage
 coverage/
 htmlcov/
 .coverage
-
 # Compressed files
 *.zip
 *.gz
@@ -61,4 +54,8 @@ htmlcov/
 *.Z
 *.lz
 *.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```

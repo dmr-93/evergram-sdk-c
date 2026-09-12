@@ -161,7 +161,9 @@ static void xrpl_checksum(const unsigned char* data, size_t len, unsigned char* 
 /**
  * @brief Decodifica seed XRPL (formato sEd...) para bytes puros
  * 
- * O ripple-keypairs usa seeds no formato Base58Check com prefixo 0x21
+ * O ripple-keypairs usa seeds no formato Base58Check com prefixo de 3 bytes:
+ * - 0x21, 0xE1, 0x4B para Ed25519 (total 3 bytes)
+ * - Seguido por 16 bytes de seed + 4 bytes checksum = 23 bytes totais
  * Esta função decodifica a seed e valida o checksum
  */
 int evergram_decode_xrpl_seed(const char* seed_hex_or_base58, unsigned char* seed_out, size_t seed_out_size) {
@@ -194,29 +196,48 @@ int evergram_decode_xrpl_seed(const char* seed_hex_or_base58, unsigned char* see
     size_t decoded_len = 0;
     
     if (base58_decode(seed_hex_or_base58, decoded, &decoded_len, sizeof(decoded)) != 0) {
+        fprintf(stderr, "[crypto_xrpl] Erro ao decodificar Base58\\n");
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    /* Validar estrutura: prefix (1) + seed (32) + checksum (4) = 37 bytes */
-    if (decoded_len != 37) {
+    printf("[crypto_xrpl] Seed Base58 decodificada (%zu bytes): ", decoded_len);
+    for (size_t i = 0; i < decoded_len; i++) {
+        printf("%02x ", decoded[i]);
+    }
+    printf("\\n");
+    
+    /* Validar estrutura: prefix (3) + seed (16) + checksum (4) = 23 bytes */
+    /* O ripple-keypairs usa 16 bytes de seed, não 32! */
+    if (decoded_len != 23) {
+        fprintf(stderr, "[crypto_xrpl] Seed deve ter 23 bytes (3 prefix + 16 seed + 4 checksum), tem %zu\\n", decoded_len);
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    /* Validar prefixo */
-    if (decoded[0] != 0x21) {
+    /* Validar prefixo (0x21, 0xE1, 0x4B para Ed25519) */
+    if (decoded[0] != 0x21 || decoded[1] != 0xE1 || decoded[2] != 0x4B) {
+        fprintf(stderr, "[crypto_xrpl] Prefixo invalido: %02x %02x %02x (esperado 21 E1 4B)\\n", decoded[0], decoded[1], decoded[2]);
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
     /* Validar checksum */
     unsigned char expected_checksum[4];
-    xrpl_checksum(decoded, 33, expected_checksum);  /* prefix + seed */
+    xrpl_checksum(decoded, 19, expected_checksum);  /* prefix (3) + seed (16) = 19 bytes */
     
-    if (memcmp(decoded + 33, expected_checksum, 4) != 0) {
+    if (memcmp(decoded + 19, expected_checksum, 4) != 0) {
+        fprintf(stderr, "[crypto_xrpl] Checksum invalido\\n");
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    /* Copiar seed (32 bytes após o prefixo) */
-    memcpy(seed_out, decoded + 1, 32);
+    /* Copiar seed (16 bytes após o prefixo de 3 bytes) */
+    /* Precisamos expandir para 32 bytes preenchendo com zeros à direita */
+    memset(seed_out, 0, 32);
+    memcpy(seed_out, decoded + 3, 16);  /* Copiar 16 bytes da seed */
+    
+    printf("[crypto_xrpl] Seed expandida (32 bytes): ");
+    for (int i = 0; i < 32; i++) {
+        printf("%02x", seed_out[i]);
+    }
+    printf("\\n");
     
     return EVERGRAM_SUCCESS;
 }
@@ -224,8 +245,12 @@ int evergram_decode_xrpl_seed(const char* seed_hex_or_base58, unsigned char* see
 /**
  * @brief Deriva par de chaves Ed25519 a partir de uma seed (igual ao ripple-keypairs)
  * 
- * O ripple-keypairs usa HMAC-SHA512 na seed para derivar a chave privada
- * Esta função replica exatamente esse comportamento
+ * O ripple-keypairs usa a seed de 16 bytes diretamente, preenchendo com zeros
+ * à direita para formar 32 bytes, sem HMAC!
+ * 
+ * IMPORTANTE: As chaves no formato XRPL têm 33 bytes (66 hex chars):
+ * - Byte 0: 0xED (prefixo para Ed25519)
+ * - Bytes 1-32: chave pública/privada real
  */
 int evergram_derive_keypair_from_seed(const unsigned char* seed, size_t seed_len,
                                        unsigned char* public_key, unsigned char* private_key) {
@@ -233,35 +258,44 @@ int evergram_derive_keypair_from_seed(const unsigned char* seed, size_t seed_len
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
-    if (seed_len != 32) {
+    if (seed_len != 16) {
+        fprintf(stderr, "[crypto_xrpl] Seed deve ter 16 bytes, tem %zu\\n", seed_len);
         return EVERGRAM_ERR_INVALID_PARAM;
     }
     
     /* 
-     * ripple-keypairs usa HMAC-SHA512 com chave "ed25519 seed" na seed
-     * Isso produz 64 bytes: os primeiros 32 são usados como seed para Ed25519
+     * ripple-keypairs usa a seed de 16 bytes diretamente,
+     * preenchendo com zeros à direita para formar 32 bytes
+     * NÃO usa HMAC-SHA512!
      */
-    const char* hmac_key = "ed25519 seed";
-    unsigned char hmac_result[64];
-    unsigned int hmac_len;
+    unsigned char ed25519_seed[32];
+    memcpy(ed25519_seed, seed, 16);
+    memset(ed25519_seed + 16, 0, 16);  /* Preencher com zeros à direita */
     
-    HMAC(EVP_sha512(), hmac_key, strlen(hmac_key), seed, seed_len, hmac_result, &hmac_len);
+    printf("[crypto_xrpl] Seed Ed25519 (32 bytes com padding): ");
+    for (int i = 0; i < 32; i++) {
+        printf("%02x", ed25519_seed[i]);
+    }
+    printf("\\n");
     
-    if (hmac_len < 64) {
+    /* Gerar par de chaves Ed25519 a partir da seed */
+    unsigned char pk_raw[32];
+    unsigned char sk_raw[64];
+    
+    if (crypto_sign_seed_keypair(pk_raw, sk_raw, ed25519_seed) != 0) {
         return EVERGRAM_ERR_CRYPTO;
     }
     
     /* 
-     * Os primeiros 32 bytes do HMAC são a seed Ed25519 usada pelo libsodium
-     * para gerar o par de chaves Ed25519
+     * Adicionar prefixo 0xED para formato XRPL (ripple-keypairs compatible)
+     * Public key: ED + 32 bytes = 33 bytes
+     * Private key: ED + 32 bytes (a seed Ed25519 de 32 bytes) = 33 bytes
      */
-    unsigned char ed25519_seed[32];
-    memcpy(ed25519_seed, hmac_result, 32);
+    public_key[0] = 0xED;
+    memcpy(public_key + 1, pk_raw, 32);
     
-    /* Gerar par de chaves Ed25519 a partir da seed derivada via HMAC */
-    if (crypto_sign_seed_keypair(public_key, private_key, ed25519_seed) != 0) {
-        return EVERGRAM_ERR_CRYPTO;
-    }
+    private_key[0] = 0xED;
+    memcpy(private_key + 1, ed25519_seed, 32);  /* Usa a seed com padding, não a secret key completa */
     
     return EVERGRAM_SUCCESS;
 }
@@ -282,9 +316,9 @@ int evergram_generate_wallet_xrpl(evergram_wallet_t* wallet) {
     unsigned char seed[32];
     randombytes_buf(seed, sizeof(seed));
     
-    /* Derivar par de chaves */
-    unsigned char pk[32];
-    unsigned char sk[64];
+    /* Derivar par de chaves no formato XRPL (33 bytes cada com prefixo 0xED) */
+    unsigned char pk[33];  // 1 byte prefix + 32 bytes chave
+    unsigned char sk[33];  // 1 byte prefix + 32 bytes seed derivada
     
     if (evergram_derive_keypair_from_seed(seed, 32, pk, sk) != EVERGRAM_SUCCESS) {
         return EVERGRAM_ERR_CRYPTO;
@@ -293,14 +327,14 @@ int evergram_generate_wallet_xrpl(evergram_wallet_t* wallet) {
     /* Converter seed para hex */
     sodium_bin2hex(wallet->seed, sizeof(wallet->seed), seed, 32);
     
-    /* Converter chaves para hex */
-    sodium_bin2hex(wallet->public_key_hex, sizeof(wallet->public_key_hex), pk, 32);
-    sodium_bin2hex(wallet->private_key_hex, sizeof(wallet->private_key_hex), seed, 32);
+    /* Converter chaves para hex (66 caracteres = 33 bytes) */
+    sodium_bin2hex(wallet->public_key_hex, sizeof(wallet->public_key_hex), pk, 33);
+    sodium_bin2hex(wallet->private_key_hex, sizeof(wallet->private_key_hex), sk, 33);
     
-    /* Gerar endereço XRPL */
-    /* SHA256 da chave pública */
+    /* Gerar endereço XRPL a partir da chave pública (usando apenas os 32 bytes após o prefixo ED) */
+    /* SHA256 da chave pública (apenas 32 bytes de dados, sem o prefixo ED) */
     unsigned char sha256_hash[SHA256_DIGEST_LENGTH];
-    SHA256(pk, 32, sha256_hash);
+    SHA256(pk + 1, 32, sha256_hash);  // Pula o prefixo 0xED
     
     /* RIPEMD160 do SHA256 */
     unsigned char ripemd[RIPEMD160_DIGEST_LENGTH];
