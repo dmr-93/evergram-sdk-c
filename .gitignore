@@ -1,7 +1,5 @@
 ```
 # Compiled and build artifacts
-*.o
-*.obj
 *.a
 *.so
 *.dylib
