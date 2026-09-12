@@ -1,9 +1,33 @@
 ```
 # Compiled and build artifacts
-*.a
-*.so
 *.o
 *.obj
-lib/
-obj/
+*.a
+*.so
+*.exe
+*.dll
+*.pyc
+__pycache__/
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+.env
+.env.local
+*.env.*
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Editors
+.vscode/
+.idea/
+
+# Build directories
+build/
+dist/
+target/
 ```
