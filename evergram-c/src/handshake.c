@@ -105,15 +105,19 @@ static int sign_challenge(const char *private_key_hex, const char *address,
         return -1;
     }
     
-    /* Obter entropy (16 bytes) da seed */
-    unsigned char seed[16];
+    /* Obter seed (agora retorna 32 bytes para hex, ou 16 para Base58) */
+    unsigned char seed[32];
     ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
     if (ret != EVERGRAM_SUCCESS) {
         fprintf(stderr, "[Handshake] Erro ao decodificar seed\n");
         return -1;
     }
+    
+    /* Determinar tamanho da seed baseado no retorno */
+    size_t seed_len = (strlen(private_key_hex) == 64) ? 32 : 16;
+    
     unsigned char pk[33], sk[33];  /* Formato XRPL: 33 bytes com prefixo 0xED */
-    ret = evergram_derive_keypair_from_seed(seed, 16, pk, sk);
+    ret = evergram_derive_keypair_from_seed(seed, seed_len, pk, sk);
     if (ret != EVERGRAM_SUCCESS) {
         fprintf(stderr, "[Handshake] Erro ao derivar par de chaves\n");
         return -1;
