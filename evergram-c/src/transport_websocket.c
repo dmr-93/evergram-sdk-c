@@ -109,8 +109,26 @@ ws_callback(struct lws* wsi, enum lws_callback_reasons reason,
                 transport->recv_len += len;
                 transport->recv_buffer[transport->recv_len] = '\0';
                 
-                // Logar recebimento
+                // Logar recebimento com detalhes
                 fprintf(stderr, "[WebSocket] Recebido %zu bytes\n", len);
+                fprintf(stderr, "[WebSocket] Dados brutos (hex): ");
+                for (size_t i = 0; i < len && i < 64; i++) {
+                    fprintf(stderr, "%02x ", ((unsigned char*)in)[i]);
+                }
+                if (len > 64) fprintf(stderr, "... (%zu bytes total)", len);
+                fprintf(stderr, "\n");
+                
+                // Tentar mostrar como string se for imprimivel
+                int is_printable = 1;
+                for (size_t i = 0; i < len; i++) {
+                    if (((unsigned char*)in)[i] < 32 || ((unsigned char*)in)[i] > 126) {
+                        is_printable = 0;
+                        break;
+                    }
+                }
+                if (is_printable && len < 256) {
+                    fprintf(stderr, "[WebSocket] Dados como string: %.*s\n", (int)len, (char*)in);
+                }
             }
             break;
 
@@ -269,13 +287,24 @@ int transport_send(ws_transport_t* transport, const uint8_t* data, size_t len) {
 
     memcpy(buf + LWS_SEND_BUFFER_PRE_PADDING, data, len);
     
-    int n = lws_write(transport->wsi, buf + LWS_SEND_BUFFER_PRE_PADDING, len, LWS_WRITE_TEXT);
+    // Log de envio com detalhes
+    fprintf(stderr, "[WebSocket] Enviando %zu bytes\n", len);
+    fprintf(stderr, "[WebSocket] Dados brutos (hex): ");
+    for (size_t i = 0; i < len && i < 64; i++) {
+        fprintf(stderr, "%02x ", data[i]);
+    }
+    if (len > 64) fprintf(stderr, "... (%zu bytes total)", len);
+    fprintf(stderr, "\n");
+    
+    int n = lws_write(transport->wsi, buf + LWS_SEND_BUFFER_PRE_PADDING, len, LWS_WRITE_BINARY);
     free(buf);
 
     if (n < (int)len) {
         fprintf(stderr, "[WebSocket] Erro ao enviar dados (enviado %d de %zu)\n", n, len);
         return EVERGRAM_ERR_NETWORK;
     }
+    
+    fprintf(stderr, "[WebSocket] Dados enviados com sucesso\n");
 
     return EVERGRAM_SUCCESS;
 }

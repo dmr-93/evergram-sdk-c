@@ -147,8 +147,8 @@ int send_auth_response(evergram_t *eg) {
     /* Construir ChainIdentity */
     Evergram__ChainIdentity identity = EVERGRAM__CHAIN_IDENTITY__INIT;
     identity.address = egi->wallet.address;
-    identity.chain_family = EVERGRAM__CHAIN_FAMILY__XRPL;
     identity.network_id = "0";
+    // Nao setar chain_family nem has_chain_family - campo required sera omitido se nao for setado
     
     /* Criar SignedMessageProof - usa public_key_hex e signature_hex como strings hex */
     char signature_hex[129];
@@ -248,8 +248,8 @@ int send_register_device(evergram_t *eg) {
     /* Construir ChainIdentity */
     Evergram__ChainIdentity identity = EVERGRAM__CHAIN_IDENTITY__INIT;
     identity.address = egi->wallet.address;
-    identity.chain_family = EVERGRAM__CHAIN_FAMILY__XRPL;
     identity.network_id = "0";
+    // Nao setar chain_family nem has_chain_family - campo required sera omitido se nao for setado
     
     /* Criar Device */
     Evergram__Device device = EVERGRAM__DEVICE__INIT;
