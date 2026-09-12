@@ -105,21 +105,20 @@ static int sign_challenge(const char *private_key_hex, const char *address,
         return -1;
     }
     
-    /* Obter public key derivada da seed */
-    unsigned char seed[32];
+    /* Obter entropy (16 bytes) da seed */
+    unsigned char seed[16];
     ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
     if (ret != EVERGRAM_SUCCESS) {
         fprintf(stderr, "[Handshake] Erro ao decodificar seed\n");
         return -1;
     }
-    
-    unsigned char pk[32], sk[64];
-    ret = evergram_derive_keypair_from_seed(seed, 32, pk, sk);
+PLACEHOLDER
+    unsigned char pk[33], sk[33];  /* Formato XRPL: 33 bytes com prefixo 0xED */
+    ret = evergram_derive_keypair_from_seed(seed, 16, pk, sk);
     if (ret != EVERGRAM_SUCCESS) {
         fprintf(stderr, "[Handshake] Erro ao derivar par de chaves\n");
         return -1;
     }
-    
     /* Converter public key para hex */
     sodium_bin2hex(public_key_out, 65, pk, 32);
     
