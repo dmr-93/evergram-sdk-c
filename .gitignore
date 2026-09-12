@@ -1,49 +1,65 @@
 ```
 # Compiled and build artifacts
-*.o
-*.obj
 *.a
 *.so
-*.dylib
-*.dll
-*.exe
-*.out
-evergram-c/lib/
-evergram-c/obj/
-evergram-c/bin/
+*.o
+obj/
+lib/
 
 # Dependencies
 node_modules/
-venv/
 .venv/
+venv/
 __pycache__/
-*.egg-info/
-dist/
-build/
+.mypy_cache/
+.pytest_cache/
 target/
 .gradle/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
 
 # Environment
 .env
 .env.local
-.env.*
+*.env.*
 
 # Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*.tmp
 
-# Logs
-*.log
+# System files
+.DS_Store
+Thumbs.db
 
 # Coverage
 coverage/
 htmlcov/
 .coverage
 
-# System
-.DS_Store
-Thumbs.db
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```

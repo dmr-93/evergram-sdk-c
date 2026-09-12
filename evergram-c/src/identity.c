@@ -159,10 +159,29 @@ int evergram_generate_device(evergram_device_t* device) {
     bytes_to_hex(pk, sizeof(pk), device->pub_hex, sizeof(device->pub_hex));
     bytes_to_hex(sk, sizeof(sk), device->priv_hex, sizeof(device->priv_hex));
     
-    // Derivar device_id a partir da chave pública (hash simplificado)
+    // Derivar device_id como SHA256(device_pub_hex em bytes) -> primeiros 32 chars hex
+    // Isso segue exatamente o SDK TypeScript: deriveDeviceId() em crypto.ts
     unsigned char hash[32];
-    crypto_hash_sha256(hash, pk, sizeof(pk));
-    bytes_to_hex(hash, EVERGRAM_DEVICE_ID_LEN / 2, device->device_id, sizeof(device->device_id));
+    unsigned char pk_bytes[32];
+    
+    // Converter a chave pública hex para bytes
+    if (sodium_hex2bin(pk_bytes, sizeof(pk_bytes), device->pub_hex, strlen(device->pub_hex), NULL, NULL, NULL) != 0) {
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    
+    // Calcular SHA256 da chave pública em bytes
+    crypto_hash_sha256(hash, pk_bytes, sizeof(pk_bytes));
+    
+    // Converter hash para hex e pegar os primeiros 32 caracteres
+    char hash_hex[65];
+    sodium_bin2hex(hash_hex, sizeof(hash_hex), hash, sizeof(hash));
+    
+    // Copiar apenas os primeiros 32 caracteres hex como device_id
+    strncpy(device->device_id, hash_hex, 32);
+    device->device_id[32] = '\0';
+    
+    printf("[evergram_generate_device] Device pub_hex: %s\n", device->pub_hex);
+    printf("[evergram_generate_device] Device ID derivado: %s (SHA256(pub_hex)[:32])\n", device->device_id);
     
     return EVERGRAM_SUCCESS;
 }
