@@ -402,87 +402,155 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
     }
     printf("\n");
     
-    /* Decodificar seed privada (pode ser hex ou Base58) */
-    unsigned char seed[32];
-    int decode_ret = evergram_decode_xrpl_seed(private_key_hex, seed, sizeof(seed));
-    if (decode_ret != EVERGRAM_SUCCESS) {
-        fprintf(stderr, "[crypto_xrpl] Erro ao decodificar seed: %d\n", decode_ret);
+    /* 
+     * A private_key_hex agora é a secret key completa do libsodium (64 bytes = 128 chars hex).
+     * O ripple-keypairs armazena apenas os primeiros 32 bytes (a seed), mas o libsodium
+     * já retorna a secret key expandida de 64 bytes pronta para uso.
+     * Precisamos usar os primeiros 32 bytes da secret key como seed Ed25519.
+     */
+    unsigned char sk_bytes[64];
+    size_t sk_bin_len;
+    
+    if (strlen(private_key_hex) == 128) {
+        // Secret key completa do libsodium (64 bytes)
+        if (sodium_hex2bin(sk_bytes, sizeof(sk_bytes), private_key_hex, 128, NULL, &sk_bin_len, NULL) != 0) {
+            return EVERGRAM_ERR_INVALID_PARAM;
+        }
+        // Usar apenas os primeiros 32 bytes como seed Ed25519
+        unsigned char ed25519_seed[32];
+        memcpy(ed25519_seed, sk_bytes, 32);
+        
+        printf("[crypto_xrpl] Seed Ed25519 (32 bytes): ");
+        for (int i = 0; i < 32; i++) {
+            printf("%02x", ed25519_seed[i]);
+        }
+        printf("\n");
+        
+        /* Derivar par de chaves da seed Ed25519 */
+        unsigned char pk[32];
+        unsigned char sk[64];
+        
+        int kp_ret = crypto_sign_seed_keypair(pk, sk, ed25519_seed);
+        if (kp_ret != 0) {
+            fprintf(stderr, "[crypto_xrpl] Erro ao gerar par de chaves Ed25519\n");
+            return EVERGRAM_ERR_CRYPTO;
+        }
+        
+        printf("[crypto_xrpl] Public key derivada (32 bytes): ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02x", pk[i]);
+        }
+        printf("...\n");
+        
+        /* Assinar mensagem usando crypto_sign_detached */
+        unsigned char signature[64];
+        if (crypto_sign_detached(signature, NULL, message, bin_msg_len, sk) != 0) {
+            fprintf(stderr, "[crypto_xrpl] Erro ao assinar mensagem\n");
+            return EVERGRAM_ERR_CRYPTO;
+        }
+        
+        printf("[crypto_xrpl] Assinatura gerada (64 bytes): ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02x", signature[i]);
+        }
+        printf("...\n");
+        
+        /* Verificar assinatura */
+        if (crypto_sign_verify_detached(signature, message, bin_msg_len, pk) != 0) {
+            fprintf(stderr, "[crypto_xrpl] ERRO: Verificacao da assinatura falhou!\n");
+            return EVERGRAM_ERR_CRYPTO;
+        }
+        printf("[crypto_xrpl] Assinatura verificada com sucesso!\n");
+        
+        /* Converter assinatura para hex */
+        if (signature_hex_size < 129) {
+            return EVERGRAM_ERR_BUFFER_TOO_SMALL;
+        }
+        
+        sodium_bin2hex(signature_hex, signature_hex_size, signature, 64);
+        
+        return EVERGRAM_SUCCESS;
+    } else if (strlen(private_key_hex) == 64) {
+        // Seed de 32 bytes (formato antigo) - aplicar SHA512 nos primeiros 16 bytes
+        if (sodium_hex2bin(sk_bytes, 32, private_key_hex, 64, NULL, &sk_bin_len, NULL) != 0) {
+            return EVERGRAM_ERR_INVALID_PARAM;
+        }
+        
+        printf("[crypto_xrpl] Seed hexadecimal convertida para 32 bytes: ");
+        for (int i = 0; i < 32; i++) {
+            printf("%02x", sk_bytes[i]);
+        }
+        printf("\n");
+        
+        /* Aplicar SHA512 nos primeiros 16 bytes (compatibilidade ripple-keypairs) */
+        unsigned char sha512_hash[64];
+        SHA512(sk_bytes, 16, sha512_hash);
+        
+        printf("[crypto_xrpl] SHA512 dos primeiros 16 bytes da seed (64 bytes): ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02x", sha512_hash[i]);
+        }
+        printf("...\n");
+        
+        unsigned char ed25519_seed[32];
+        memcpy(ed25519_seed, sha512_hash, 32);
+        
+        printf("[crypto_xrpl] Seed Ed25519 final (32 bytes): ");
+        for (int i = 0; i < 32; i++) {
+            printf("%02x", ed25519_seed[i]);
+        }
+        printf("\n");
+        
+        /* Derivar par de chaves */
+        unsigned char pk[32];
+        unsigned char sk[64];
+        
+        int kp_ret = crypto_sign_seed_keypair(pk, sk, ed25519_seed);
+        if (kp_ret != 0) {
+            fprintf(stderr, "[crypto_xrpl] Erro ao gerar par de chaves Ed25519\n");
+            return EVERGRAM_ERR_CRYPTO;
+        }
+        
+        printf("[crypto_xrpl] Public key derivada (32 bytes): ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02x", pk[i]);
+        }
+        printf("...\n");
+        
+        printf("[crypto_xrpl] Secret key derivada (64 bytes): ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02x", sk[i]);
+        }
+        printf("...\n");
+        
+        /* Assinar */
+        unsigned char signature[64];
+        if (crypto_sign_detached(signature, NULL, message, bin_msg_len, sk) != 0) {
+            fprintf(stderr, "[crypto_xrpl] Erro ao assinar mensagem\n");
+            return EVERGRAM_ERR_CRYPTO;
+        }
+        
+        printf("[crypto_xrpl] Assinatura gerada (64 bytes): ");
+        for (int i = 0; i < 16; i++) {
+            printf("%02x", signature[i]);
+        }
+        printf("...\n");
+        
+        if (crypto_sign_verify_detached(signature, message, bin_msg_len, pk) != 0) {
+            fprintf(stderr, "[crypto_xrpl] ERRO: Verificacao da assinatura falhou!\n");
+            return EVERGRAM_ERR_CRYPTO;
+        }
+        printf("[crypto_xrpl] Assinatura verificada com sucesso!\n");
+        
+        if (signature_hex_size < 129) {
+            return EVERGRAM_ERR_BUFFER_TOO_SMALL;
+        }
+        
+        sodium_bin2hex(signature_hex, signature_hex_size, signature, 64);
+        
+        return EVERGRAM_SUCCESS;
+    } else {
+        fprintf(stderr, "[crypto_xrpl] Private key deve ter 64 ou 128 caracteres hex\n");
         return EVERGRAM_ERR_INVALID_PARAM;
     }
-    
-    /* 
-     * IMPORTANTE: ripple-keypairs SEMPRE usa apenas os primeiros 16 bytes da seed
-     * e aplica SHA512 neles para obter a seed Ed25519 de 32 bytes.
-     * Mesmo que a seed tenha 32 bytes, usamos apenas os primeiros 16!
-     */
-    unsigned char ed25519_seed[32];
-    unsigned char sha512_hash[64];
-    
-    /* Usar apenas os primeiros 16 bytes da seed decodificada */
-    SHA512(seed, 16, sha512_hash);
-    
-    printf("[crypto_xrpl] SHA512 dos primeiros 16 bytes da seed (64 bytes): ");
-    for (int i = 0; i < 16; i++) {
-        printf("%02x", sha512_hash[i]);
-    }
-    printf("...\n");
-    
-    memcpy(ed25519_seed, sha512_hash, 32);
-    
-    printf("[crypto_xrpl] Seed Ed25519 final (32 bytes): ");
-    for (int i = 0; i < 32; i++) {
-        printf("%02x", ed25519_seed[i]);
-    }
-    printf("\n");
-    
-    /* Derivar par de chaves da seed Ed25519 */
-    unsigned char pk[32];
-    unsigned char sk[64];
-    
-    int kp_ret = crypto_sign_seed_keypair(pk, sk, ed25519_seed);
-    if (kp_ret != 0) {
-        fprintf(stderr, "[crypto_xrpl] Erro ao gerar par de chaves Ed25519\n");
-        return EVERGRAM_ERR_CRYPTO;
-    }
-    
-    printf("[crypto_xrpl] Public key derivada (32 bytes): ");
-    for (int i = 0; i < 16; i++) {
-        printf("%02x", pk[i]);
-    }
-    printf("...\n");
-    
-    printf("[crypto_xrpl] Secret key derivada (64 bytes): ");
-    for (int i = 0; i < 16; i++) {
-        printf("%02x", sk[i]);
-    }
-    printf("...\n");
-    
-    /* Assinar mensagem usando crypto_sign_detached para obter apenas a assinatura */
-    unsigned char signature[64];
-    if (crypto_sign_detached(signature, NULL, message, bin_msg_len, sk) != 0) {
-        fprintf(stderr, "[crypto_xrpl] Erro ao assinar mensagem\n");
-        return EVERGRAM_ERR_CRYPTO;
-    }
-    
-    printf("[crypto_xrpl] Assinatura gerada (64 bytes): ");
-    for (int i = 0; i < 16; i++) {
-        printf("%02x", signature[i]);
-    }
-    printf("...\n");
-    
-    /* Verificar assinatura com a public key (apenas para debug) */
-    if (crypto_sign_verify_detached(signature, message, bin_msg_len, pk) != 0) {
-        fprintf(stderr, "[crypto_xrpl] ERRO: Verificacao da assinatura falhou!\n");
-        return EVERGRAM_ERR_CRYPTO;
-    }
-    printf("[crypto_xrpl] Assinatura verificada com sucesso!\n");
-    
-    /* Converter assinatura para hex */
-    if (signature_hex_size < 129) {
-        return EVERGRAM_ERR_BUFFER_TOO_SMALL;
-    }
-    
-    sodium_bin2hex(signature_hex, signature_hex_size, signature, 64);
-    
-    return EVERGRAM_SUCCESS;
 }
