@@ -4,13 +4,50 @@
 *.obj
 *.a
 *.so
-*.exe
+*.dylib
 *.dll
+*.exe
 *.out
 debug_handshake
-test_sign
-test_sign2
-# Build directories
-obj/
+bin/
 lib/
+obj/
+dist/
+build/
+
+# Dependencies
+.venv/
+venv/
+node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Editors
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# System
+.DS_Store
+Thumbs.db
 ```

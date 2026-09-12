@@ -13,79 +13,126 @@ void handle_sigint(int sig) {
     running = 0;
 }
 
+// Função auxiliar para imprimir buffer em hex
+void print_hex_dump(const char *label, const unsigned char *buf, size_t len) {
+    printf("[DEBUG %s] Dump Hex (%zu bytes): ", label, len);
+    for (size_t i = 0; i < len && i < 64; i++) {
+        printf("%02x", buf[i]);
+        if ((i + 1) % 4 == 0) printf(" ");
+        if ((i + 1) % 16 == 0) printf("\n                    ");
+    }
+    if (len > 64) printf("\n                    ... (%zu bytes total)", len);
+    printf("\n");
+    
+    // Tenta imprimir como string se for texto imprimível
+    if (len > 0 && len < 512) {
+        int is_printable = 1;
+        for (size_t i = 0; i < len; i++) {
+            if (buf[i] < 32 || buf[i] > 126) {
+                is_printable = 0;
+                break;
+            }
+        }
+        if (is_printable) {
+            printf("[DEBUG %s] String: %.*s\n", label, (int)len, (char*)buf);
+        }
+    }
+}
+
 // Callback para mensagens recebidas
 void on_message(evergram_t* eg, const evergram_message_t* msg) {
-    if (!msg || !msg->text) {
+    printf("\n[=== MENSAGEM RECEBIDA ===]\n");
+    if (!msg) {
+        printf("[Mensagem] MSG NULA!\n");
         return;
     }
     
-    printf("[Mensagem] Chat: %s\n", msg->chat_id);
-    printf("[Mensagem] De: %s\n", msg->sender);
-    printf("[Mensagem] Texto: %s\n", msg->text);
+    printf("[Mensagem] Chat: %s\n", msg->chat_id ? msg->chat_id : "N/A");
+    printf("[Mensagem] De: %s\n", msg->sender ? msg->sender : "N/A");
+    printf("[Mensagem] Texto: %s\n", msg->text ? msg->text : "N/A");
     
     if (msg->reply_to_msg_id) {
         printf("[Mensagem] Resposta para: %s\n", msg->reply_to_msg_id);
     }
     
-    // Ignorar mensagens do próprio bot
-    // Em produção, acessar wallet via user_data
-    // evergram_wallet_t* wallet = (evergram_wallet_t*)evergram_get_user_data(eg);
-    // if (wallet && strcmp(msg->sender, wallet->address) == 0) {
-    //     return;
-    // }
+    evergram_wallet_t* wallet = (evergram_wallet_t*)evergram_get_user_data(eg);
+    if (wallet && msg->sender && strcmp(msg->sender, wallet->address) == 0) {
+        printf("[Mensagem] Ignorando mensagem do próprio bot\n");
+        return;
+    }
     
     // Responder com eco
-    printf("Respondendo...\n");
+    printf("[Mensagem] Respondendo com eco...\n");
     int ret = evergram_reply(eg, msg, "Echo: %s", msg->text);
     if (ret != EVERGRAM_SUCCESS) {
-        fprintf(stderr, "Erro ao responder: %s\n", evergram_strerror(ret));
+        fprintf(stderr, "[Mensagem] Erro ao responder: %s\n", evergram_strerror(ret));
+    } else {
+        printf("[Mensagem] Eco enviado com sucesso!\n");
     }
+    printf("[==========================]\n\n");
 }
 
 // Callback para reações
 void on_reaction(evergram_t* eg, const evergram_reaction_t* reaction) {
     (void)eg;  // Não usado no stub
-    if (!reaction) return;
+    printf("\n[=== REAÇÃO RECEBIDA ===]\n");
+    if (!reaction) {
+        printf("[Reação] REAÇÃO NULA!\n");
+        return;
+    }
     
     printf("[Reação] Chat: %s, Msg: %s, Emoji: %s, Removida: %s\n",
-           reaction->chat_id,
-           reaction->msg_id,
-           reaction->emoji,
+           reaction->chat_id ? reaction->chat_id : "N/A",
+           reaction->msg_id ? reaction->msg_id : "N/A",
+           reaction->emoji ? reaction->emoji : "N/A",
            reaction->removed ? "sim" : "não");
+    printf("[==========================]\n\n");
 }
 
 // Callback para eventos de digitação
 void on_typing(evergram_t* eg, const evergram_typing_event_t* event) {
     (void)eg;  // Não usado no stub
-    if (!event) return;
+    printf("\n[=== EVENTO DE DIGITAÇÃO ===]\n");
+    if (!event) {
+        printf("[Digitação] EVENTO NULO!\n");
+        return;
+    }
     
     printf("[Digitação] Chat: %s, Usuário: %s, %s digitando\n",
-           event->chat_id,
-           event->sender,
+           event->chat_id ? event->chat_id : "N/A",
+           event->sender ? event->sender : "N/A",
            event->is_typing ? "está" : "parou de");
+    printf("[==========================]\n\n");
 }
 
 // Callback para erros
 void on_error(evergram_t* eg, evergram_error_t error, const char* message) {
     (void)eg;  // Não usado no stub
-    fprintf(stderr, "[ERRO] %s: %s\n", evergram_strerror(error), 
+    fprintf(stderr, "\n[=== ERRO ===]\n");
+    fprintf(stderr, "[ERRO] Código %d (%s): %s\n", error, evergram_strerror(error), 
             message ? message : "sem detalhes");
+    fprintf(stderr, "[==========================]\n\n");
 }
 
 // Callback para conexão estabelecida
 void on_connected(evergram_t* eg) {
+    printf("\n[=== CONEXÃO ESTABELECIDA ===]\n");
     evergram_wallet_t* wallet = (evergram_wallet_t*)evergram_get_user_data(eg);
     if (wallet) {
         printf("[CONECTADO] Bot online como %s\n", wallet->address);
+        printf("[CONECTADO] Device ID: %s\n", ((evergram_device_t*)((char*)wallet - sizeof(evergram_wallet_t)))->device_id);
     } else {
         printf("[CONECTADO] Bot online e pronto para receber mensagens!\n");
     }
+    printf("[==========================]\n\n");
 }
 
 // Callback para desconexão
 void on_disconnected(evergram_t* eg) {
     (void)eg;  // Não usado no stub
+    printf("\n[=== DESCONECTADO ===]\n");
     printf("[DESCONECTADO] Bot offline.\n");
+    printf("[==========================]\n\n");
 }
 
 // Função para carregar identidade existente ou criar nova

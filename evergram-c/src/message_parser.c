@@ -109,6 +109,13 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
             printf("[Parser] Nonce length: %zu bytes\n", nonce_len);
             printf("[Parser] Nonce string: %s\n", chal->nonce);
             
+            // Imprimir bytes do nonce para debug
+            printf("[Parser] Nonce bytes: ");
+            for (size_t i = 0; i < nonce_len && i < 64; i++) {
+                printf("%02x ", (unsigned char)chal->nonce[i]);
+            }
+            printf("\n");
+            
             if (nonce_len <= sizeof(eg->auth_challenge_nonce)) {
                 /* Armazenar nonce como string hex (já vem em hex do servidor) */
                 memcpy(eg->auth_challenge_nonce, chal->nonce, nonce_len);
@@ -125,6 +132,8 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
                 int ret = send_auth_response(eg);
                 if (ret != EVERGRAM_SUCCESS) {
                     fprintf(stderr, "[Parser] Erro ao enviar AuthResponse: %d\n", ret);
+                } else {
+                    printf("[Parser] AuthResponse enviado com sucesso, aguardando resposta...\n");
                 }
             } else {
                 fprintf(stderr, "[Parser] Nonce muito grande: %zu bytes (max %zu)\n", nonce_len, sizeof(eg->auth_challenge_nonce));

@@ -76,6 +76,11 @@ static int sign_challenge(const uint8_t *secret_key_bytes, const char *address,
     
     printf("[Handshake] Challenge string: %s\n", challenge);
     printf("[Handshake] Challenge length: %d\n", len);
+    printf("[Handshake] Challenge bytes: ");
+    for (int i = 0; i < len && i < 50; i++) {
+        printf("%02x ", (unsigned char)challenge[i]);
+    }
+    printf("\n");
     
     /* Assinar com Ed25519 */
     unsigned long long sig_len;
@@ -85,6 +90,8 @@ static int sign_challenge(const uint8_t *secret_key_bytes, const char *address,
         fprintf(stderr, "[Handshake] Erro ao assinar desafio\n");
         return -1;
     }
+    
+    printf("[Handshake] Assinatura gerada com sucesso (%llu bytes)\n", sig_len);
     return 0;
 }
 
@@ -149,6 +156,9 @@ int send_auth_response(evergram_t *eg) {
         sprintf(signature_hex + i*2, "%02x", signature[i]);
     }
     
+    printf("[Handshake] Public key hex: %s\\n", egi->wallet.public_key_hex);
+    printf("[Handshake] Signature hex: %s\\n", signature_hex);
+    
     Evergram__SignedMessageProof signed_proof = EVERGRAM__SIGNED_MESSAGE_PROOF__INIT;
     signed_proof.public_key_hex = egi->wallet.public_key_hex;
     signed_proof.signature_hex = signature_hex;
@@ -164,15 +174,27 @@ int send_auth_response(evergram_t *eg) {
     device.device_pub_hex = egi->device.pub_hex;
     device.platform = "Terminal";
     
-    /* Criar Auth message */
+    /* Criar Auth message - garantir que TODOS os campos required estejam preenchidos */
     Evergram__Auth auth = EVERGRAM__AUTH__INIT;
     auth.identity = &identity;
     auth.proof = &proof;
     auth.device = &device;
     
+    /* Verificar se todos os campos estão preenchidos antes de criar ClientMessage */
+    if (!auth.identity || !auth.proof || !auth.device) {
+        fprintf(stderr, "[Handshake] ERRO: Campos required do Auth nao preenchidos\\n");
+        return EVERGRAM_ERR_INVALID_PARAM;
+    }
+    
+    printf("[Handshake] Identity address: %s\\n", auth.identity->address);
+    printf("[Handshake] Proof case: %d\\n", auth.proof->proof_case);
+    printf("[Handshake] Device ID: %s\\n", auth.device->device_id);
+    
     /* Criar ClientMessage */
     Evergram__ClientMessage msg = EVERGRAM__CLIENT_MESSAGE__INIT;
+    msg.request_id = 1;  // Primeiro request - ID deve ser >= 1 conforme proto
     msg.auth = &auth;
+    msg.payload_case = EVERGRAM__CLIENT_MESSAGE__PAYLOAD_AUTH;
     
     /* Serializar protobuf */
     size_t packed_size = evergram__client_message__get_packed_size(&msg);
@@ -181,7 +203,20 @@ int send_auth_response(evergram_t *eg) {
         return EVERGRAM_ERR_MEMORY;
     }
     
+    if (packed_size == 0) {
+        fprintf(stderr, "[Handshake] ERRO: Tamanho da mensagem é 0! Verifique campos required\\n");
+        free(packed);
+        return EVERGRAM_ERR_PROTO;
+    }
+    
     evergram__client_message__pack(&msg, packed);
+    
+    printf("[Handshake] Tamanho da mensagem Auth: %zu bytes\n", packed_size);
+    printf("[Handshake] Primeiros bytes da mensagem: ", packed_size);
+    for (size_t i = 0; i < (packed_size < 20 ? packed_size : 20); i++) {
+        printf("%02x ", packed[i]);
+    }
+    printf("\n");
     
     /* Enviar via transporte */
     ws_transport_t *transport = (ws_transport_t*)egi->ws_context;
@@ -194,8 +229,10 @@ int send_auth_response(evergram_t *eg) {
     free(packed);
     
     if (ret == EVERGRAM_SUCCESS) {
-        printf("[Handshake] Mensagem Auth enviada\n");
+        printf("[Handshake] Mensagem Auth enviada com sucesso\n");
         egi->hs_state = EVERGRAM_HS_AUTHENTICATED;
+    } else {
+        fprintf(stderr, "[Handshake] Falha ao enviar AuthResponse: %d\n", ret);
     }
     
     return ret;
