@@ -1,17 +1,32 @@
 ```
-# Compiled and binary files
-*.a
-*.so
+# Compiled and build artifacts
 *.o
 *.obj
+*.a
+*.so
+*.exe
+*.dll
+*.pyc
+*.class
+*.out
+obj/
+lib/
 
-# Dependencies and build directories
-temp_sdk/
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+target/
+.gradle/
 
 # Logs and temp files
 *.log
 *.tmp
 *.swp
+*.swo
 
 # Environment
 .env
@@ -22,57 +37,36 @@ temp_sdk/
 .vscode/
 .idea/
 
-# Coverage reports
+# System files
+.DS_Store
+Thumbs.db
+
+# Coverage
 coverage/
 htmlcov/
-*.coverage
+.coverage
 
-# Python specific
-__pycache__/
-*.pyc
-*.pyo
-.Python
-*.so
-.PyInstaller/
-.pytest_cache/
-.mypy_cache/
-
-# Node.js specific
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Java specific
-*.class
-*.jar
-*.war
-*.ear
-target/
-.gradle/
-build/
-
-# C/C++ specific
-*.o
-*.a
-*.so
-*.dll
-*.exe
-*.out
-obj/
-lib/
-
-# Distribution / packaging
-*.tar.*
+# Compressed files
 *.zip
 *.gz
+*.tar
+*.tgz
 *.bz2
 *.xz
 *.7z
 *.rar
 *.zst
-
-# System files
-.DS_Store
-Thumbs.db
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
 ```

@@ -317,6 +317,44 @@ int evergram_hex_to_bytes(const char* hex, uint8_t* out, size_t out_len);
  */
 int evergram_bytes_to_hex(const uint8_t* bytes, size_t len, char* out, size_t out_len);
 
+/**
+ * @brief Decodifica seed XRPL (formato sEd... ou hex) para bytes puros.
+ * @param seed_hex_or_base58 Seed em formato hex ou Base58 (sEd...)
+ * @param seed_out Buffer para seed decodificada (32 bytes)
+ * @param seed_out_size Tamanho do buffer (deve ser >= 32)
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+int evergram_decode_xrpl_seed(const char* seed_hex_or_base58, unsigned char* seed_out, size_t seed_out_size);
+
+/**
+ * @brief Deriva par de chaves Ed25519 a partir de uma seed (compatível com ripple-keypairs).
+ * @param seed Seed de 32 bytes
+ * @param seed_len Tamanho da seed (deve ser 32)
+ * @param public_key Buffer para chave pública (32 bytes)
+ * @param private_key Buffer para chave privada (64 bytes)
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+int evergram_derive_keypair_from_seed(const unsigned char* seed, size_t seed_len,
+                                       unsigned char* public_key, unsigned char* private_key);
+
+/**
+ * @brief Gera wallet XRPL compatível com ripple-keypairs.
+ * @param wallet Ponteiro para estrutura a ser preenchida
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+int evergram_generate_wallet_xrpl(evergram_wallet_t* wallet);
+
+/**
+ * @brief Assina mensagem usando chave privada derivada de seed XRPL.
+ * @param message_hex Mensagem em formato hexadecimal
+ * @param private_key_hex Chave privada em hex ou seed Base58
+ * @param signature_hex Buffer para assinatura em hex (129 bytes mínimo)
+ * @param signature_hex_size Tamanho do buffer
+ * @return EVERGRAM_SUCCESS ou erro
+ */
+int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_key_hex,
+                                  char* signature_hex, size_t signature_hex_size);
+
 // ============================================================================
 // Gerenciamento da Instância
 // ============================================================================
