@@ -1,0 +1,20 @@
+{
+  "name": "evergram-c",
+  "version": "1.0.0",
+  "description": "Portagem standalone do [Evergram SDK](https://github.com/rosseti/evergram-sdk) para C, permitindo integração de bots e aplicações com o protocolo Evergram de mensagens descentralizadas e criptografadas de ponta-a-ponta.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples",
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ripple-keypairs": "^3.1.0",
+    "sodium-native": "^5.1.0"
+  }
+}
