@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsodium-dev libwebsockets-dev protobuf-c-compiler \
+            libprotobuf-c-dev libssl-dev libcurl4-openssl-dev cppcheck
+
+      - name: Build
+        run: make
+
+      - name: Unit tests
+        run: make test
+
+      - name: AddressSanitizer + UndefinedBehaviorSanitizer
+        run: make asan
+
+      - name: UndefinedBehaviorSanitizer
+        run: make ubsan
+
+      - name: Static analysis (gcc -fanalyzer)
+        run: make analyze
+
+      - name: Static analysis (cppcheck)
+        run: make cppcheck

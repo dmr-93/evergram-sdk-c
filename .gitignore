@@ -22,3 +22,14 @@ venv/
 .env
 env/
 ENV/
+
+# Build output
+build/
+obj/
+lib/
+bin/
+tests/run_tests
+*.o
+*.a
+*.so
+*.log
