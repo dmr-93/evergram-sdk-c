@@ -158,16 +158,43 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
             }
         } else if (auth_resp && auth_resp->status && auth_resp->status->code && 
                    strstr(auth_resp->status->code, "device_not_registered")) {
-            /* Device nao registrado - registrar e tentar novamente */
+            /* Device nao registrado: registrar e so reenviar o Auth quando o
+             * registerDeviceResponse chegar (branch abaixo).
+             * Reenviar o Auth imediatamente aqui fazia o gateway responder
+             * device_not_registered de novo em loop apertado: o registro e uma
+             * escrita de consenso e demora (o SDK TS espera ate 35s). */
             printf("[Parser] Device nao registrado, registrando...\n");
-            send_register_device(eg);
-            send_auth_response(eg);
+            int reg_ret = send_register_device(eg);
+            if (reg_ret != EVERGRAM_SUCCESS) {
+                fprintf(stderr, "[Parser] Falha ao enviar RegisterDevice: %d\n", reg_ret);
+            }
         } else {
             fprintf(stderr, "[Parser] Falha na autenticacao: %s\n", 
                     auth_resp && auth_resp->status && auth_resp->status->message 
                     ? auth_resp->status->message : "unknown error");
             if (eg->on_error) {
                 eg->on_error(eg, EVERGRAM_ERR_AUTH, "Authentication failed");
+            }
+        }
+    }
+    /* Resposta do registro de dispositivo. So depois dela o Auth pode ser
+     * reenviado: o registro e uma escrita de consenso e pode demorar. */
+    else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_REGISTER_DEVICE_RESPONSE
+             && server_msg->register_device_response) {
+        Evergram__RegisterDeviceResponse *reg_resp = server_msg->register_device_response;
+        int reg_ok = (reg_resp->status && reg_resp->status->ok);
+        const char *reg_code = (reg_resp->status && reg_resp->status->code) ? reg_resp->status->code : "";
+        const char *reg_msg = (reg_resp->status && reg_resp->status->message) ? reg_resp->status->message : "";
+        
+        printf("[Parser] RegisterDeviceResponse recebido: ok=%d code=%s msg=%s\n", reg_ok, reg_code, reg_msg);
+        
+        if (reg_ok && eg->hs_state != EVERGRAM_HS_AUTHENTICATED) {
+            printf("[Parser] Device registrado, reenviando Auth...\n");
+            send_auth_response(eg);
+        } else if (!reg_ok) {
+            fprintf(stderr, "[Parser] Falha ao registrar device: %s\n", reg_msg[0] ? reg_msg : reg_code);
+            if (eg->on_error) {
+                eg->on_error(eg, EVERGRAM_ERR_AUTH, reg_msg[0] ? reg_msg : "register device failed");
             }
         }
     }
@@ -192,32 +219,96 @@ int evergram_process_incoming_data(evergram_t *eg, const uint8_t *data, size_t l
     }
     /* Verificar se e Envelope (mensagem de chat recebida) */
     else if (server_msg->payload_case == EVERGRAM__SERVER_MESSAGE__PAYLOAD_ENVELOPE && server_msg->envelope) {
-        printf("[Parser] Envelope recebido\n");
-        
         Evergram__Envelope *env = server_msg->envelope;
-        if (env && env->chat_id && env->sender && env->send) {
-            evergram_message_t msg;
-            memset(&msg, 0, sizeof(msg));
-            
-            strncpy(msg.chat_id, env->chat_id, sizeof(msg.chat_id) - 1);
-            strncpy(msg.sender, env->sender, sizeof(msg.sender) - 1);
-            
-            if (env->send->msg_id) {
-                strncpy(msg.msg_id, env->send->msg_id, sizeof(msg.msg_id) - 1);
+        
+        /*
+         * IMPORTANTE: em protobuf-c o oneof "content" do Envelope e um UNION —
+         * env->send, env->typing, env->react, ... apontam para O MESMO endereco.
+         * Testar `env->send != NULL` nao diz nada sobre o tipo do conteudo: num
+         * envelope TYPING ele fica igual a env->typing (portanto nao-NULL) e ler
+         * env->send->msg_id reinterpreta um TypingContent{bool,bool} como
+         * SendContent -> ponteiro 0x1 -> strncpy(0x1) -> segfault.
+         * O discriminante correto e env->content_case.
+         */
+        printf("[Parser] Envelope recebido (type=%s content_case=%d)\n",
+               env->type ? env->type : "?", env->content_case);
+        
+        if (!env->chat_id || !env->sender) {
+            fprintf(stderr, "[Parser] Envelope sem chat_id/sender, ignorando\n");
+        } else {
+            switch (env->content_case) {
+            case EVERGRAM__ENVELOPE__CONTENT_SEND: {
+                Evergram__SendContent *send = env->send;
+                if (!send) break;
+                
+                evergram_message_t msg;
+                memset(&msg, 0, sizeof(msg));
+                
+                strncpy(msg.chat_id, env->chat_id, sizeof(msg.chat_id) - 1);
+                strncpy(msg.sender, env->sender, sizeof(msg.sender) - 1);
+                
+                if (send->msg_id) {
+                    strncpy(msg.msg_id, send->msg_id, sizeof(msg.msg_id) - 1);
+                }
+                
+                msg.timestamp = (env->has_ts && env->ts) ? (uint64_t)env->ts
+                                                         : evergram_get_timestamp_ms();
+                
+                /* TODO: decrypt E2EE — por enquanto entrega o ciphertext cru */
+                if (send->ciphertext) {
+                    msg.text = (char*)send->ciphertext;
+                }
+                
+                if (send->reply_to_msg_id && send->reply_to_msg_id[0]) {
+                    msg.reply_to_msg_id = (char*)send->reply_to_msg_id;
+                }
+                
+                if (eg->on_message) {
+                    eg->on_message(eg, &msg);
+                }
+                break;
             }
-            
-            msg.timestamp = evergram_get_timestamp_ms();
-            
-            if (env->send->ciphertext) {
-                msg.text = env->send->ciphertext;
+            case EVERGRAM__ENVELOPE__CONTENT_TYPING: {
+                Evergram__TypingContent *typing = env->typing;
+                if (!typing || !eg->on_typing) break;
+                
+                evergram_typing_event_t ev;
+                memset(&ev, 0, sizeof(ev));
+                strncpy(ev.chat_id, env->chat_id, sizeof(ev.chat_id) - 1);
+                strncpy(ev.sender, env->sender, sizeof(ev.sender) - 1);
+                ev.is_typing = typing->is_typing;
+                ev.timestamp = (env->has_ts && env->ts) ? (uint64_t)env->ts
+                                                        : evergram_get_timestamp_ms();
+                
+                eg->on_typing(eg, &ev);
+                break;
             }
-            
-            if (env->send->reply_to_msg_id) {
-                msg.reply_to_msg_id = (char*)env->send->reply_to_msg_id;
+            case EVERGRAM__ENVELOPE__CONTENT_REACT: {
+                Evergram__ReactContent *react = env->react;
+                if (!react || !eg->on_reaction) break;
+                
+                evergram_reaction_t r;
+                memset(&r, 0, sizeof(r));
+                strncpy(r.chat_id, env->chat_id, sizeof(r.chat_id) - 1);
+                strncpy(r.sender, env->sender, sizeof(r.sender) - 1);
+                if (react->msg_id) {
+                    strncpy(r.msg_id, react->msg_id, sizeof(r.msg_id) - 1);
+                }
+                /* TODO: decrypt E2EE — por enquanto o ciphertext cru */
+                if (react->ciphertext) {
+                    strncpy(r.emoji, react->ciphertext, sizeof(r.emoji) - 1);
+                }
+                r.removed = react->removed;
+                r.timestamp = (env->has_ts && env->ts) ? (uint64_t)env->ts
+                                                       : evergram_get_timestamp_ms();
+                
+                eg->on_reaction(eg, &r);
+                break;
             }
-            
-            if (eg->on_message) {
-                eg->on_message(eg, &msg);
+            default:
+                printf("[Parser] Envelope sem conteudo tratado (content_case=%d)\n",
+                       env->content_case);
+                break;
             }
         }
     }

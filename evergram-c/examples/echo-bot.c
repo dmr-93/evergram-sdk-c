@@ -7,6 +7,15 @@
 // Variável global para controle de loop
 static int running = 1;
 
+// Contexto do bot. A API expõe um único user_data, então wallet e device vão
+// juntos. (O código antigo fazia aritmética de ponteiro a partir do wallet para
+// achar o device — `(char*)wallet - sizeof(evergram_wallet_t)` — o que lia
+// memória fora do objeto e imprimia lixo como Device ID.)
+typedef struct {
+    evergram_wallet_t* wallet;
+    evergram_device_t* device;
+} bot_ctx_t;
+
 // Handler para SIGINT (Ctrl+C)
 void handle_sigint(int sig) {
     (void)sig;
@@ -47,23 +56,25 @@ void on_message(evergram_t* eg, const evergram_message_t* msg) {
         return;
     }
     
-    printf("[Mensagem] Chat: %s\n", msg->chat_id ? msg->chat_id : "N/A");
-    printf("[Mensagem] De: %s\n", msg->sender ? msg->sender : "N/A");
+    printf("[Mensagem] Chat: %s\n", msg->chat_id[0] ? msg->chat_id : "N/A");
+    printf("[Mensagem] De: %s\n", msg->sender[0] ? msg->sender : "N/A");
     printf("[Mensagem] Texto: %s\n", msg->text ? msg->text : "N/A");
     
     if (msg->reply_to_msg_id) {
         printf("[Mensagem] Resposta para: %s\n", msg->reply_to_msg_id);
     }
     
-    evergram_wallet_t* wallet = (evergram_wallet_t*)evergram_get_user_data(eg);
-    if (wallet && msg->sender && strcmp(msg->sender, wallet->address) == 0) {
+    evergram_wallet_t* wallet = NULL;
+    bot_ctx_t* ctx = (bot_ctx_t*)evergram_get_user_data(eg);
+    if (ctx) wallet = ctx->wallet;
+    if (wallet && msg->sender[0] && strcmp(msg->sender, wallet->address) == 0) {
         printf("[Mensagem] Ignorando mensagem do próprio bot\n");
         return;
     }
     
     // Responder com eco
     printf("[Mensagem] Respondendo com eco...\n");
-    int ret = evergram_reply(eg, msg, "Echo: %s", msg->text);
+    int ret = evergram_reply(eg, msg, "Echo: %s", msg->text ? msg->text : "");
     if (ret != EVERGRAM_SUCCESS) {
         fprintf(stderr, "[Mensagem] Erro ao responder: %s\n", evergram_strerror(ret));
     } else {
@@ -82,9 +93,9 @@ void on_reaction(evergram_t* eg, const evergram_reaction_t* reaction) {
     }
     
     printf("[Reação] Chat: %s, Msg: %s, Emoji: %s, Removida: %s\n",
-           reaction->chat_id ? reaction->chat_id : "N/A",
-           reaction->msg_id ? reaction->msg_id : "N/A",
-           reaction->emoji ? reaction->emoji : "N/A",
+           reaction->chat_id[0] ? reaction->chat_id : "N/A",
+           reaction->msg_id[0] ? reaction->msg_id : "N/A",
+           reaction->emoji[0] ? reaction->emoji : "N/A",
            reaction->removed ? "sim" : "não");
     printf("[==========================]\n\n");
 }
@@ -99,8 +110,8 @@ void on_typing(evergram_t* eg, const evergram_typing_event_t* event) {
     }
     
     printf("[Digitação] Chat: %s, Usuário: %s, %s digitando\n",
-           event->chat_id ? event->chat_id : "N/A",
-           event->sender ? event->sender : "N/A",
+           event->chat_id[0] ? event->chat_id : "N/A",
+           event->sender[0] ? event->sender : "N/A",
            event->is_typing ? "está" : "parou de");
     printf("[==========================]\n\n");
 }
@@ -117,10 +128,10 @@ void on_error(evergram_t* eg, evergram_error_t error, const char* message) {
 // Callback para conexão estabelecida
 void on_connected(evergram_t* eg) {
     printf("\n[=== CONEXÃO ESTABELECIDA ===]\n");
-    evergram_wallet_t* wallet = (evergram_wallet_t*)evergram_get_user_data(eg);
-    if (wallet) {
-        printf("[CONECTADO] Bot online como %s\n", wallet->address);
-        printf("[CONECTADO] Device ID: %s\n", ((evergram_device_t*)((char*)wallet - sizeof(evergram_wallet_t)))->device_id);
+    bot_ctx_t* ctx = (bot_ctx_t*)evergram_get_user_data(eg);
+    if (ctx && ctx->wallet) {
+        printf("[CONECTADO] Bot online como %s\n", ctx->wallet->address);
+        printf("[CONECTADO] Device ID: %s\n", ctx->device ? ctx->device->device_id : "N/A");
     } else {
         printf("[CONECTADO] Bot online e pronto para receber mensagens!\n");
     }
@@ -285,6 +296,9 @@ int main(int argc, char* argv[]) {
     printf("Device ID: %s\n", device.device_id);
     printf("\n");
     
+    // Contexto compartilhado pelos callbacks (wallet + device)
+    bot_ctx_t bot_ctx = { .wallet = &wallet, .device = &device };
+
     // Configurar bot
     evergram_options_t options = {
         .url = ws_url,
@@ -295,7 +309,7 @@ int main(int argc, char* argv[]) {
         .max_participants = 250,
         .request_timeout_ms = 30000,
         .auto_reconnect = true,
-        .user_data = &wallet
+        .user_data = &bot_ctx
     };
     
     // Criar instância

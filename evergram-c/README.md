@@ -35,12 +35,16 @@ evergram-c/
 - **libsodium** - Criptografia (compatible com tweetnacl)
 - **libwebsockets** ou **libuv + libwebsocket** - Transporte WebSocket
 - **protobuf-c** - Serialização de mensagens
-- **ripple-keypairs** (via bindings C) - Chaves XRPL
+- **OpenSSL** (`libssl-dev`) - SHA-256/SHA-512/RIPEMD-160 para chaves/endereços XRPL
+
+> As chaves e assinaturas XRPL (o que o `ripple-keypairs` faz em JavaScript) são
+> **reimplementadas em C** em `src/crypto_xrpl.c`. O SDK não depende de Node.js,
+> npm nem de nenhum binding JavaScript.
 
 ### Instalação das dependências (Ubuntu/Debian)
 
 ```bash
-sudo apt-get install libsodium-dev libwebsockets-dev protobuf-c-compiler libprotobuf-c-dev
+sudo apt-get install libsodium-dev libwebsockets-dev protobuf-c-compiler libprotobuf-c-dev libssl-dev
 ```
 
 ## Quick Start

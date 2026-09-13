@@ -116,6 +116,8 @@ static int sign_challenge(const char *private_key_hex, const char *public_key_he
 }
 
 /* Enviar resposta Auth para o gateway */
+static uint32_t next_request_id(void);
+
 int send_auth_response(evergram_t *eg) {
     if (!eg) return EVERGRAM_ERR_INVALID_PARAM;
     
@@ -158,11 +160,25 @@ int send_auth_response(evergram_t *eg) {
         sprintf(signature_hex + i*2, "%02x", signature[i]);
     }
     
-    printf("[Handshake] Public key hex: %s\\n", egi->wallet.public_key_hex);
-    printf("[Handshake] Signature hex: %s\\n", signature_hex);
+    /*
+     * Chaves publicas ed25519 na XRPL sao serializadas com o prefixo 0xED
+     * ("ED" em hex) -> 33 bytes = 66 caracteres hex. Sem esse prefixo o
+     * gateway (que usa a mesma regra do ripple-keypairs) nao identifica o
+     * algoritmo da chave e rejeita a prova com invalid_signed_message_signature.
+     * Mesma regra do SDK TS: publicKeyHex = kp.publicKey ("ED" + 32 bytes).
+     */
+    char public_key_prefixed[EVERGRAM_MAX_HEX_KEY_LEN + 4];
+    const char *public_key_hex = egi->wallet.public_key_hex;
+    if (strlen(public_key_hex) == 64) {
+        snprintf(public_key_prefixed, sizeof(public_key_prefixed), "ED%s", public_key_hex);
+        public_key_hex = public_key_prefixed;
+    }
+
+    printf("[Handshake] Public key hex: %s\n", public_key_hex);
+    printf("[Handshake] Signature hex: %s\n", signature_hex);
     
     Evergram__SignedMessageProof signed_proof = EVERGRAM__SIGNED_MESSAGE_PROOF__INIT;
-    signed_proof.public_key_hex = egi->wallet.public_key_hex;
+    signed_proof.public_key_hex = (char *)public_key_hex;
     signed_proof.signature_hex = signature_hex;
     
     /* Criar AuthProof com signed_message */
@@ -194,7 +210,7 @@ int send_auth_response(evergram_t *eg) {
     
     /* Criar ClientMessage */
     Evergram__ClientMessage msg = EVERGRAM__CLIENT_MESSAGE__INIT;
-    msg.request_id = 1;  // Primeiro request - ID deve ser >= 1 conforme proto
+    msg.request_id = next_request_id();  /* id de correlacao, comeca em 1 */
     msg.auth = &auth;
     msg.payload_case = EVERGRAM__CLIENT_MESSAGE__PAYLOAD_AUTH;
     
@@ -232,12 +248,21 @@ int send_auth_response(evergram_t *eg) {
     
     if (ret == EVERGRAM_SUCCESS) {
         printf("[Handshake] Mensagem Auth enviada com sucesso\n");
-        egi->hs_state = EVERGRAM_HS_AUTHENTICATED;
+        /* NAO marcar como AUTENTICADO aqui: enviar != autenticar.
+         * O estado so muda quando o gateway responde AuthResponse ok
+         * (ver message_parser.c). Marcar aqui escondia falhas de auth. */
     } else {
         fprintf(stderr, "[Handshake] Falha ao enviar AuthResponse: %d\n", ret);
     }
     
     return ret;
+}
+
+/* ClientMessage.request_id: id de correlacao request/response. 0 = "nao
+ * setado"; os envios comecam em 1 (ver comentario no proto). */
+static uint32_t next_request_id(void) {
+    static uint32_t counter = 0;
+    return ++counter;
 }
 
 /* Enviar mensagem de registro de dispositivo */
@@ -267,12 +292,22 @@ int send_register_device(evergram_t *eg) {
     register_dev.identity = &identity;
     register_dev.device = &device;
     
-    /* Criar ClientMessage */
+    /* Criar ClientMessage.
+     * IMPORTANTE: em protobuf-c o oneof e controlado por payload_case; sem
+     * seta-lo o campo register_device nao e serializado e a mensagem sai com
+     * 0 bytes (o transporte recusa e nada e enviado). */
     Evergram__ClientMessage msg = EVERGRAM__CLIENT_MESSAGE__INIT;
+    msg.request_id = next_request_id();
     msg.register_device = &register_dev;
+    msg.payload_case = EVERGRAM__CLIENT_MESSAGE__PAYLOAD_REGISTER_DEVICE;
     
     /* Serializar protobuf */
     size_t packed_size = evergram__client_message__get_packed_size(&msg);
+    if (packed_size == 0) {
+        fprintf(stderr, "[Handshake] ERRO: RegisterDevice empacotado com 0 bytes\n");
+        return EVERGRAM_ERR_PROTO;
+    }
+    
     uint8_t *packed = malloc(packed_size);
     if (!packed) {
         return EVERGRAM_ERR_MEMORY;
@@ -291,7 +326,7 @@ int send_register_device(evergram_t *eg) {
     free(packed);
     
     if (ret == EVERGRAM_SUCCESS) {
-        printf("[Handshake] Mensagem RegisterDevice enviada\n");
+        printf("[Handshake] Mensagem RegisterDevice enviada (%zu bytes)\n", packed_size);
     }
     
     return ret;

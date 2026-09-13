@@ -123,16 +123,34 @@ int evergram_generate_wallet(evergram_wallet_t* wallet) {
     }
     
     // Converter para hex strings
-    // Seed em hex
+    // Seed em hex (32 bytes = 64 chars)
     bytes_to_hex(seed, sizeof(seed), wallet->seed, sizeof(wallet->seed));
-    // Chave pública em hex (32 bytes = 64 chars hex)
-    bytes_to_hex(pk, sizeof(pk), wallet->public_key_hex, sizeof(wallet->public_key_hex));
-    // Private key hex deve ser a secret key completa (64 bytes = 128 chars hex)
-    // Isso é compatível com o ripple-keypairs que retorna kp.privateKey
-    bytes_to_hex(sk, sizeof(sk), wallet->private_key_hex, sizeof(wallet->private_key_hex));
-    
-    // Gerar endereço XRPL no formato Base58 correto (ex: rNPvaf8QNuUFh9xoRTj48BdoodWSywywdw)
-    if (xrpl_address_from_pubkey(pk, sizeof(pk), wallet->address, sizeof(wallet->address)) <= 0) {
+
+    // Formato XRPL/ripple-keypairs: chaves ed25519 sao serializadas com o
+    // prefixo 0xED ("ED") -> 33 bytes = 66 chars hex.
+    //   publicKeyHex  = 'ED' + 32 bytes da chave publica
+    //   privateKeyHex = 'ED' + 32 bytes da seed (formato do kp.privateKey)
+    char pk_hex[65];
+    bytes_to_hex(pk, sizeof(pk), pk_hex, sizeof(pk_hex));
+    snprintf(wallet->public_key_hex, sizeof(wallet->public_key_hex), "ED%s", pk_hex);
+
+    bytes_to_hex(seed, sizeof(seed), wallet->private_key_hex + 2,
+                 sizeof(wallet->private_key_hex) - 2);
+    wallet->private_key_hex[0] = 'E';
+    wallet->private_key_hex[1] = 'D';
+
+    // A secret key completa do libsodium (64 bytes) nao e consumida: a
+    // assinatura e derivada da seed (ED + 32 bytes), igual ao ripple-keypairs.
+    (void)sk;
+
+    // Endereco XRPL = deriveAddress(publicKeyHex) = RIPEMD160(SHA256(ED||pk)).
+    // Os 33 bytes COM o prefixo entram no hash: hashear so os 32 bytes gera um
+    // endereco que nao corresponde a chave e o gateway rejeita com
+    // invalid_signed_message_address.
+    unsigned char pub33[33];
+    pub33[0] = 0xED;
+    memcpy(pub33 + 1, pk, sizeof(pk));
+    if (xrpl_address_from_pubkey(pub33, sizeof(pub33), wallet->address, sizeof(wallet->address)) <= 0) {
         return EVERGRAM_ERR_CRYPTO;
     }
     

@@ -349,10 +349,12 @@ int evergram_generate_wallet_xrpl(evergram_wallet_t* wallet) {
     sodium_bin2hex(wallet->public_key_hex, sizeof(wallet->public_key_hex), pk, 33);
     sodium_bin2hex(wallet->private_key_hex, sizeof(wallet->private_key_hex), sk, 33);
     
-    /* Gerar endereço XRPL a partir da chave pública (usando apenas os 32 bytes após o prefixo ED) */
-    /* SHA256 da chave pública (apenas 32 bytes de dados, sem o prefixo ED) */
+    /* Gerar endereço XRPL a partir da chave pública.
+     * IMPORTANTE: o hash usa os 33 bytes COM o prefixo 0xED (ED||pk), igual ao
+     * deriveAddress() do xrpl/ripple-keypairs. Hashear so os 32 bytes gera um
+     * endereco que nao corresponde a chave. */
     unsigned char sha256_hash[SHA256_DIGEST_LENGTH];
-    SHA256(pk + 1, 32, sha256_hash);  // Pula o prefixo 0xED
+    SHA256(pk, 33, sha256_hash);  // inclui o prefixo 0xED
     
     /* RIPEMD160 do SHA256 */
     unsigned char ripemd[RIPEMD160_DIGEST_LENGTH];
@@ -387,6 +389,40 @@ int evergram_generate_wallet_xrpl(evergram_wallet_t* wallet) {
  * IMPORTANTE: message_hex deve ser a string hexadecimal dos bytes da mensagem UTF-8
  * Por exemplo, se a mensagem é "hello", message_hex deve ser "68656c6c6f"
  */
+/* Assina `message` com uma seed ed25519 de 32 bytes (o que o ripple-keypairs
+ * chama de rawPrivateKey) e devolve a assinatura em hex. */
+static int sign_with_ed25519_seed(const unsigned char* message, size_t message_len,
+                                  const unsigned char seed[32],
+                                  char* signature_hex, size_t signature_hex_size) {
+    unsigned char pk[32];
+    unsigned char sk[64];
+    unsigned char signature[64];
+    
+    if (crypto_sign_seed_keypair(pk, sk, seed) != 0) {
+        fprintf(stderr, "[crypto_xrpl] Erro ao gerar par de chaves Ed25519\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    
+    /* Assinar mensagem usando a secret key derivada */
+    if (crypto_sign_detached(signature, NULL, message, message_len, sk) != 0) {
+        fprintf(stderr, "[crypto_xrpl] Erro ao assinar mensagem\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    
+    /* Verificar assinatura */
+    if (crypto_sign_verify_detached(signature, message, message_len, pk) != 0) {
+        fprintf(stderr, "[crypto_xrpl] ERRO: Verificacao da assinatura falhou!\n");
+        return EVERGRAM_ERR_CRYPTO;
+    }
+    
+    if (signature_hex_size < 129) {
+        return EVERGRAM_ERR_BUFFER_TOO_SMALL;
+    }
+    
+    sodium_bin2hex(signature_hex, signature_hex_size, signature, 64);
+    return EVERGRAM_SUCCESS;
+}
+
 int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_key_hex,
                                   char* signature_hex, size_t signature_hex_size) {
     if (!message_hex || !private_key_hex || !signature_hex) {
@@ -414,6 +450,27 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
     /* Decodificar private key hex para bytes */
     unsigned char sk_bytes[64];
     size_t sk_bin_len;
+    
+    if (strlen(private_key_hex) == 66) {
+        /* Formato canonico XRPL/ripple-keypairs: 'ED' + 32 bytes de seed ed25519.
+         * E o formato que kp.privateKey tem e o que o SDK TS usa para assinar. */
+        if (!((private_key_hex[0] == 'E' || private_key_hex[0] == 'e') &&
+              (private_key_hex[1] == 'D' || private_key_hex[1] == 'd'))) {
+            fprintf(stderr, "[crypto_xrpl] Private key de 66 chars sem prefixo ED\n");
+            return EVERGRAM_ERR_INVALID_PARAM;
+        }
+        
+        unsigned char ed25519_seed[32];
+        if (sodium_hex2bin(ed25519_seed, sizeof(ed25519_seed), private_key_hex + 2, 64,
+                           NULL, &sk_bin_len, NULL) != 0) {
+            return EVERGRAM_ERR_INVALID_PARAM;
+        }
+        
+        printf("[crypto_xrpl] Private key ED-prefixada: seed Ed25519 de %zu bytes\n", sk_bin_len);
+        
+        return sign_with_ed25519_seed(message, bin_msg_len, ed25519_seed,
+                                      signature_hex, signature_hex_size);
+    }
     
     if (strlen(private_key_hex) == 128) {
         // Secret key completa do libsodium (64 bytes = 128 chars hex)
