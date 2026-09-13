@@ -1,33 +1,15 @@
 ```
-# Compiled and build artifacts
-*.o
-*.obj
+# Build artifacts
 *.a
 *.so
-*.dylib
-*.dll
-*.exe
-*.out
+*.o
 obj/
 lib/
 bin/
 
 # Dependencies
 node_modules/
-venv/
-.venv/
-__pycache__/
-*.egg-info/
-dist/
-build/
-target/
-.gradle/
-
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-*.swo
+package-lock.json
 
 # Environment
 .env
@@ -40,6 +22,13 @@ target/
 *.swp
 *.swo
 
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
 # OS specific
 .DS_Store
 Thumbs.db
@@ -49,37 +38,99 @@ coverage/
 htmlcov/
 .coverage
 
-# Python specific
+# Python
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-*.so
-*.egg
-*.manifest
-*.spec
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage*
+.nox/
+.pytest_cache/
+.mypy_cache/
 
-# C/C++ specific
+# Node.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+node_modules/
+jspm_packages/
+*.tsbuildinfo
+.nyc_output
+coverage/
+.nyc_output/
+istanbul.yml
+.last_run_cpplint.json
+.nycrc
+
+# C/C++
 *.o
 *.obj
-*.a
-*.lib
+*.exe
+*.dll
 *.so
 *.dylib
-*.dll
-*.exe
+*.a
+*.lib
 *.out
-*.i
-*.ii
-*.s
-*.mod
-*.s~
-*.bak
-*.orig
-*.rej
+*.ilk
+*.iobj
+*.ipdb
+*.pdb
+*.tlog
+*.aps
+*.ncb
+*.opt
+*.plg
+*.vcproj
+*.vcxproj.filters
+ipch/
+*.sdf
+*.suo
+*.opensdf
+*.user
+*.userosscache
+*.sln.docstates
+*.vcxproj.user
+*.vcxproj.*.user
+*.vcproj.*.user
+*.cache
+*.ilk
+*.meta
+*.pidb
+*.svclog
+*.rsp
+*.pgc
+*.pgd
+*.tpu
+*.tmi
+*.trc
+*.xSYM
+*.xSYM.db
+*.stackdump
+*.core
 *~
-
-# Build directories
-build/
-dist/
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.stackdump
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 ```

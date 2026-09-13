@@ -456,7 +456,8 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
         
         return EVERGRAM_SUCCESS;
     } else if (strlen(private_key_hex) == 64) {
-        // Seed de 32 bytes - ripple-keypairs aplica SHA512 e usa primeiros 32 bytes
+        // Seed de 32 bytes - ripple-keypairs usa DIRETAMENTE sem SHA512
+        // SHA512 so eh aplicado quando a seed tem 16 bytes (entropy)
         if (sodium_hex2bin(sk_bytes, 32, private_key_hex, 64, NULL, &sk_bin_len, NULL) != 0) {
             return EVERGRAM_ERR_INVALID_PARAM;
         }
@@ -469,15 +470,13 @@ int evergram_sign_with_xrpl_seed(const char* message_hex, const char* private_ke
         
         /* 
          * ripple-keypairs behavior para seeds de 32 bytes:
-         * Aplica SHA512 na seed e usa os primeiros 32 bytes como seed Ed25519
+         * Usa a seed DIRETAMENTE como seed Ed25519, SEM aplicar SHA512
+         * SHA512 so eh aplicado para seeds de 16 bytes (entropy)
          */
-        unsigned char sha512_hash[64];
-        SHA512(sk_bytes, 32, sha512_hash);
-        
         unsigned char ed25519_seed[32];
-        memcpy(ed25519_seed, sha512_hash, 32);
+        memcpy(ed25519_seed, sk_bytes, 32);  // Copia direta, sem hash
         
-        printf("[crypto_xrpl] SHA512(seed) primeiros 32 bytes: ");
+        printf("[crypto_xrpl] Seed Ed25519 (usada diretamente): ");
         for (int i = 0; i < 32; i++) {
             printf("%02x", ed25519_seed[i]);
         }
