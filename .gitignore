@@ -4,8 +4,6 @@
 *.so
 *.o
 obj/
-lib/
-bin/
 
 # Dependencies
 node_modules/
@@ -34,9 +32,9 @@ package-lock.json
 Thumbs.db
 
 # Coverage
+.coverage
 coverage/
 htmlcov/
-.coverage
 
 # Python
 __pycache__/
