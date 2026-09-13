@@ -33,3 +33,15 @@ tests/run_tests
 *.a
 *.so
 *.log
+
+# Runtime state written by the examples, never committed:
+#   identity.json        the wallet seed and device private key
+#   visitor-sessions.txt room keys for in-flight visitor sessions
+#   xahau-tips.txt       the tip bot's idempotency log
+identity.json
+**/identity.json
+visitor-sessions.txt
+**/visitor-sessions.txt
+xahau-tips.txt
+**/xahau-tips.txt
+
