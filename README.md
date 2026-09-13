@@ -1,6 +1,4 @@
-# Evergram SDK
-
-C SDK for the Evergram gateway.
+# Evergram SDK C
 
 It authenticates an XRPL account by signing the gateway's challenge, registers
 the device on first use, keeps a websocket session alive, and dispatches
