@@ -1,0 +1,93 @@
+syntax = "proto2";
+
+package evergram;
+
+enum ChainFamily {
+  CHAIN_FAMILY_UNSPECIFIED = 0;
+  XRPL                     = 1;
+  EVM                      = 2;
+  BTC                      = 3;
+  SOL                      = 4;
+}
+
+message ChainIdentity {
+  optional ChainFamily chain_family = 1;  // Mudado de required para optional
+  required string address      = 2;
+  required string network_id   = 3;
+}
+
+message AuthProof {
+  oneof proof {
+    string             jwt            = 1;
+    SignedMessageProof signed_message = 2;
+  }
+}
+
+message SignedMessageProof {
+  required string public_key_hex = 1;
+  required string signature_hex  = 2;
+}
+
+message Device {
+  required string device_id     = 1;
+  required string device_pub_hex = 2;
+  optional string platform      = 3;
+}
+
+message Auth {
+  required ChainIdentity identity = 1;
+  required AuthProof     proof    = 2;
+  required Device        device   = 3;
+}
+
+message RegisterDevice {
+  required ChainIdentity identity = 1;
+  required Device        device   = 2;
+}
+
+message AuthChallenge {
+  required string nonce = 1;
+}
+
+message AuthResponse {
+  optional Status status = 1;
+}
+
+message Status {
+  required bool   ok      = 1;
+  optional string code    = 2;
+  optional string message = 3;
+}
+
+message Error {
+  required string message = 1;
+  optional string code    = 2;
+}
+
+message Envelope {
+  required string chat_id = 1;
+  required string sender  = 2;
+  optional Send   send    = 3;
+}
+
+message Send {
+  required string msg_id        = 1;
+  optional bytes  ciphertext    = 2;
+  optional string reply_to_msg_id = 3;
+}
+
+message ServerMessage {
+  oneof payload {
+    AuthChallenge auth_challenge = 1;
+    AuthResponse  auth_response  = 2;
+    Envelope      envelope       = 3;
+    Error         error          = 4;
+  }
+}
+
+message ClientMessage {
+  optional uint32 request_id = 1;
+  optional Auth   auth       = 2;
+  optional RegisterDevice register_device = 3;
+  optional Send   send       = 4;
+}
