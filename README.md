@@ -1,8 +1,6 @@
-# evergram-sdk-c
+# Evergram SDK
 
-C17 client library for the Evergram gateway: a clean rewrite of `evergram-c`
-with the same observable behaviour, a smaller public surface, and explicit
-ownership and error rules.
+C SDK for the Evergram gateway.
 
 It authenticates an XRPL account by signing the gateway's challenge, registers
 the device on first use, keeps a websocket session alive, and dispatches
